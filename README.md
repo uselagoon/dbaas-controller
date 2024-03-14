@@ -2,20 +2,13 @@
 
 ## Overview
 
-The dbaas-controller is designed to be used by Lagoon, specifically focusing provisioning database access for Lagoon workloads. The dbaas-controller aims to facilitate easier updates, migrations, and overall management of database resources in Lagoon environments.
+The dbaas-controller is designed to be used by Lagoon, specifically focusing on provisioning database access for Lagoon workloads. The dbaas-controller aims to facilitate easier updates, migrations, and overall management of database resources in Lagoon environments.
 
 It allows for provisiong and deprovisioning of shared MySQL/MariaDB, PostgreSQL, and MongoDB databases.
 
 ## Installation
 
 See [lagoon-charts](https://github.com/uselagoon/lagoon-charts)
-
-## Previously Used Operator
-
-The existing [DBaaS operator](https://github.com/amazeeio/dbaas-operator), while reliable, has several issues that complicate the upgrade and migration processes. The reliance on CRDs for storing critical information makes it challenging to update consumers without risking deprovisioning and data loss. Additionally, changing an environment type after creation can cause errors with deprovisioning, leading to a suboptimal experience.
-
-The current DBaaS operator uses a Provider CRD to contain provisioning details and allows providers to be pooled by sharing the same type. It interacts with Lagoon environments by creating a Consumer CRD with the requested provider type, which then triggers the provisioning of database resources.
-Proposed Solution
 
 ## Differences from the Existing Operator
 
@@ -33,7 +26,8 @@ Key Features:
 
 To interact with the dbaas-controller, the following CRDs are introduced:
 
-- DatabaseProvider
+- DatabaseXProvider
+    - This CRD is used to define a database provider, such as MySQL, PostgreSQL, or MongoDB.
 - DatabaseRequest
 - DatabaseMigration
 
