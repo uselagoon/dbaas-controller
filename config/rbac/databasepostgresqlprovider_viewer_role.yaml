@@ -1,0 +1,27 @@
+# permissions for end users to view databasepostgresqlproviders.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: databasepostgresqlprovider-viewer-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: dbaas-controller
+    app.kubernetes.io/part-of: dbaas-controller
+    app.kubernetes.io/managed-by: kustomize
+  name: databasepostgresqlprovider-viewer-role
+rules:
+- apiGroups:
+  - crd.lagoon.sh
+  resources:
+  - databasepostgresqlproviders
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - crd.lagoon.sh
+  resources:
+  - databasepostgresqlproviders/status
+  verbs:
+  - get

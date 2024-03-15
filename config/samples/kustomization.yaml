@@ -1,0 +1,7 @@
+## Append samples of your project ##
+resources:
+- crd_v1alpha1_databaserequest.yaml
+- crd_v1alpha1_databasemysqlprovider.yaml
+- crd_v1alpha1_databasepostgresqlprovider.yaml
+- crd_v1alpha1_databasemongodbprovider.yaml
+#+kubebuilder:scaffold:manifestskustomizesamples
