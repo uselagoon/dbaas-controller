@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -30,9 +31,11 @@ import (
 // DatabasePostgreSQLProviderReconciler reconciles a DatabasePostgreSQLProvider object
 type DatabasePostgreSQLProviderReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
+//+kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=crd.lagoon.sh,resources=databasepostgresqlproviders,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=crd.lagoon.sh,resources=databasepostgresqlproviders/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=crd.lagoon.sh,resources=databasepostgresqlproviders/finalizers,verbs=update
@@ -56,6 +59,7 @@ func (r *DatabasePostgreSQLProviderReconciler) Reconcile(ctx context.Context, re
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *DatabasePostgreSQLProviderReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.Recorder = mgr.GetEventRecorderFor("databasepostgresqlprovider_controller")
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&crdv1alpha1.DatabasePostgreSQLProvider{}).
 		Complete(r)

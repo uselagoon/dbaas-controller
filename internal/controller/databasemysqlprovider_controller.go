@@ -34,7 +34,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	crdv1alpha1 "github.com/uselagoon/dbaas-controller/api/v1alpha1"
-	"github.com/uselagoon/dbaas-controller/internal/mysql"
+	"github.com/uselagoon/dbaas-controller/internal/database/mysql"
 )
 
 const databaseMySQLProviderFinalizer = "databasemysqlprovider.crd.lagoon.sh/finalizer"
@@ -81,10 +81,12 @@ var (
 // DatabaseMySQLProviderReconciler reconciles a DatabaseMySQLProvider object
 type DatabaseMySQLProviderReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	Scheme      *runtime.Scheme
+	Recorder    record.EventRecorder
+	MySQLClient mysql.MySQLInterface
 }
 
+//+kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=crd.lagoon.sh,resources=databasemysqlproviders,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=crd.lagoon.sh,resources=databasemysqlproviders/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=crd.lagoon.sh,resources=databasemysqlproviders/finalizers,verbs=update
@@ -174,10 +176,10 @@ func (r *DatabaseMySQLProviderReconciler) Reconcile(ctx context.Context, req ctr
 	for _, conn := range mySQLConns {
 		// make a ping to the database to check if it's up and running and we can connect to it
 		// if not, we should return an error and set the status to 0
-		if err := mysql.Ping(ctx, conn.getDSN()); err != nil {
+		if err := r.MySQLClient.Ping(ctx, conn.getDSN()); err != nil {
 			return r.handleError(ctx, instance, "db-ping", err)
 		}
-		version, err := mysql.Version(ctx, conn.getDSN())
+		version, err := r.MySQLClient.Version(ctx, conn.getDSN())
 		if err != nil {
 			return r.handleError(ctx, instance, "db-version", err)
 		}

@@ -75,6 +75,7 @@ type DatabaseRequestReconciler struct {
 	Recorder record.EventRecorder
 }
 
+//+kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=crd.lagoon.sh,resources=databaserequests,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=crd.lagoon.sh,resources=databaserequests/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=crd.lagoon.sh,resources=databaserequests/finalizers,verbs=update
@@ -83,7 +84,7 @@ type DatabaseRequestReconciler struct {
 func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithName("databaserequest_controller")
 	logger.Info("Reconciling DatabaseRequest")
-	promDatabaseRequestReconcileCounter.WithLabelValues(req.Name, req.Namespace, "reconciled").Inc()
+	promDatabaseRequestReconcileCounter.WithLabelValues(req.Name, req.Namespace).Inc()
 
 	databaseRequest := &crdv1alpha1.DatabaseRequest{}
 	if err := r.Get(ctx, req.NamespacedName, databaseRequest); err != nil {

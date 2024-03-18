@@ -24,11 +24,13 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	crdv1alpha1 "github.com/uselagoon/dbaas-controller/api/v1alpha1"
+	"github.com/uselagoon/dbaas-controller/internal/database/mysql"
 )
 
 var _ = Describe("DatabaseMySQLProvider Controller", func() {
@@ -105,9 +107,12 @@ var _ = Describe("DatabaseMySQLProvider Controller", func() {
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
+			fakeRecorder := record.NewFakeRecorder(1)
 			controllerReconciler := &DatabaseMySQLProviderReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:      k8sClient,
+				Scheme:      k8sClient.Scheme(),
+				Recorder:    fakeRecorder,
+				MySQLClient: &mysql.MockMySQLer{},
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

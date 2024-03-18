@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -30,9 +31,11 @@ import (
 // DatabaseMongoDBProviderReconciler reconciles a DatabaseMongoDBProvider object
 type DatabaseMongoDBProviderReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme  *runtime.Scheme
+	Recoder record.EventRecorder
 }
 
+//+kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=crd.lagoon.sh,resources=databasemongodbproviders,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=crd.lagoon.sh,resources=databasemongodbproviders/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=crd.lagoon.sh,resources=databasemongodbproviders/finalizers,verbs=update
@@ -56,6 +59,7 @@ func (r *DatabaseMongoDBProviderReconciler) Reconcile(ctx context.Context, req c
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *DatabaseMongoDBProviderReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.Recoder = mgr.GetEventRecorderFor("databasemongodbprovider_controller")
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&crdv1alpha1.DatabaseMongoDBProvider{}).
 		Complete(r)
