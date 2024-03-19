@@ -36,6 +36,7 @@ import (
 
 	crdv1alpha1 "github.com/uselagoon/dbaas-controller/api/v1alpha1"
 	"github.com/uselagoon/dbaas-controller/internal/controller"
+	"github.com/uselagoon/dbaas-controller/internal/database/mysql"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -130,8 +131,9 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controller.DatabaseMySQLProviderReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		MySQLClient: &mysql.MySQLMock{}, // change to mysql.MySQLImpl{} to use the real implementation
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DatabaseMySQLProvider")
 		os.Exit(1)
