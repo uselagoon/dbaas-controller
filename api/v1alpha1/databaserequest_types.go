@@ -23,17 +23,19 @@ import (
 
 // AdditionalUsers defines the additional users to be created
 type AdditionalUsers struct {
-	//+kubebuilder:required
-	//+kubebuilder:validation:Required
-	//+kubebuilder:validation:MinItems=1
-	Names []string `json:"names"`
-
 	//+kubebuilder:validation:Required
 	//+kubebuilder:validation:Enum=read-only;read-write
 	//+kubebuilder:default:=read-only
 	// Type is the type of user to be created
 	// it can be either "read-only" or "read-write"
 	Type string `json:"type"`
+
+	//+kubebuilder:required
+	//+kubebuilder:validation:Required
+	//+kubebuilder:validation:Minimum=1
+	//+kubebuilder:validation:Maximum=32
+	// Count the number of how many accounts should be created
+	Count int `json:"count"`
 }
 
 // DatabaseConnectionReference defines the reference to a database connection

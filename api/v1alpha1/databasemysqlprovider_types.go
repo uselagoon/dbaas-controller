@@ -40,7 +40,7 @@ type MySQLConnection struct {
 
 	//+kubebuilder:required
 	// PasswordSecretRef is the reference to the secret containing the password
-	PasswordSecretRef v1.ObjectReference `json:"passwordSecretRef"`
+	PasswordSecretRef v1.SecretReference `json:"passwordSecretRef"`
 
 	//+kubebuilder:required
 	//+kubebuilder:validation:Required

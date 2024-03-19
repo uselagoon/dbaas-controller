@@ -2,18 +2,23 @@ package mysql
 
 import "context"
 
-var _ MySQLInterface = (*MockMySQLer)(nil)
+// Make sure MySQLMock implements MySQLInterface
+var _ MySQLInterface = (*MySQLMock)(nil)
 
-type MockMySQLer struct{}
+// MySQLMock is a mock implementation of the MySQL database
+type MySQLMock struct{}
 
-func (mi *MockMySQLer) Ping(ctx context.Context, dsn string) error {
+// Ping pings the MySQL database
+func (mi *MySQLMock) Ping(ctx context.Context, dsn string) error {
 	return nil
 }
 
-func (mi *MockMySQLer) Version(ctx context.Context, dsn string) (string, error) {
+// Version returns the version of the MySQL database
+func (mi *MySQLMock) Version(ctx context.Context, dsn string) (string, error) {
 	return "5.7.34", nil
 }
 
-func (mi *MockMySQLer) CreateDatabase(ctx context.Context, dsn, databaseName, userName, password string) error {
+// CreateDatabase creates a database in the MySQL database if it does not exist.
+func (mi *MySQLMock) CreateDatabase(ctx context.Context, dsn, databaseName, userName, password string) error {
 	return nil
 }

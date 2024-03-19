@@ -72,12 +72,9 @@ var _ = Describe("DatabaseMySQLProvider Controller", func() {
 							{
 								Name:     "test-connection",
 								Hostname: "test-hostname",
-								PasswordSecretRef: v1.ObjectReference{
-									Kind:            secret.Kind,
-									Name:            secret.Name,
-									Namespace:       secret.Namespace,
-									UID:             secret.UID,
-									ResourceVersion: secret.ResourceVersion,
+								PasswordSecretRef: v1.SecretReference{
+									Name:      secret.Name,
+									Namespace: secret.Namespace,
 								},
 								Port:     3306,
 								Username: "test-username",
@@ -112,7 +109,7 @@ var _ = Describe("DatabaseMySQLProvider Controller", func() {
 				Client:      k8sClient,
 				Scheme:      k8sClient.Scheme(),
 				Recorder:    fakeRecorder,
-				MySQLClient: &mysql.MockMySQLer{},
+				MySQLClient: &mysql.MySQLMock{},
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

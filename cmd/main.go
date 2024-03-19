@@ -136,20 +136,6 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "DatabaseMySQLProvider")
 		os.Exit(1)
 	}
-	if err = (&controller.DatabasePostgreSQLProviderReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "DatabasePostgreSQLProvider")
-		os.Exit(1)
-	}
-	if err = (&controller.DatabaseMongoDBProviderReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "DatabaseMongoDBProvider")
-		os.Exit(1)
-	}
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

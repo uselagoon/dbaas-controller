@@ -42,11 +42,11 @@ spec:
               additionalUsers:
                 description: AdditionalUsers defines the additional users to be created
                 properties:
-                  names:
-                    items:
-                      type: string
-                    minItems: 1
-                    type: array
+                  count:
+                    description: Count the number of how many accounts should be created
+                    maximum: 32
+                    minimum: 1
+                    type: integer
                   type:
                     default: read-only
                     description: |-
@@ -57,7 +57,7 @@ spec:
                     - read-write
                     type: string
                 required:
-                - names
+                - count
                 - type
                 type: object
               databaseConnectionReference:

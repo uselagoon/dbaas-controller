@@ -20,10 +20,14 @@ type MySQLInterface interface {
 	CreateDatabase(ctx context.Context, dsn, databaseName, userName, password string) error
 }
 
-type MySQLerImpl struct{}
+// MySQLImpl is the implementation of the MySQL database
+type MySQLImpl struct{}
+
+// Make sure MySQLImpl implements MySQLInterface
+var _ MySQLInterface = (*MySQLImpl)(nil)
 
 // Ping pings the MySQL database
-func (mi *MySQLerImpl) Ping(ctx context.Context, dsn string) error {
+func (mi *MySQLImpl) Ping(ctx context.Context, dsn string) error {
 	log.FromContext(ctx).Info("Pinging MySQL database")
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -39,7 +43,7 @@ func (mi *MySQLerImpl) Ping(ctx context.Context, dsn string) error {
 }
 
 // Version returns the version of the MySQL database
-func (mi *MySQLerImpl) Version(ctx context.Context, dsn string) (string, error) {
+func (mi *MySQLImpl) Version(ctx context.Context, dsn string) (string, error) {
 	log.FromContext(ctx).Info("Getting MySQL database version")
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -59,7 +63,7 @@ func (mi *MySQLerImpl) Version(ctx context.Context, dsn string) (string, error) 
 // CreateDatabase creates a database in the MySQL database if it does not exist.
 // It also creates a user and grants the user permissions on the database.
 // This function is idempotent and can be called multiple times without side effects.
-func (mi *MySQLerImpl) CreateDatabase(ctx context.Context, dsn, databaseName, userName, password string) error {
+func (mi *MySQLImpl) CreateDatabase(ctx context.Context, dsn, databaseName, userName, password string) error {
 	log.FromContext(ctx).Info("Creating MySQL database")
 	// Connect to the database server
 	db, err := sql.Open("mysql", dsn)
