@@ -41,7 +41,9 @@ type AdditionalUsers struct {
 // DatabaseConnectionReference defines the reference to a database connection
 type DatabaseConnectionReference struct {
 	//+kubebuilder:required
-	// DatabaseObjectReference is the reference to the database object
+	// DatabaseObjectReference is the reference to the database object.
+	// Note that this is a way for the provider to find all database requests
+	// that are using the same database connection and update them if necessary.
 	DatabaseObjectReference v1.ObjectReference `json:"databaseObjectReference"`
 
 	//+kubebuilder:required
@@ -69,19 +71,25 @@ type DatabaseRequestSpec struct {
 	//+kubebuilder:optional
 	// Seed is the seed for the database request
 	// it is a reference to a local secret within the same namespace
-	Seed *v1.LocalObjectReference `json:"seed,omitempty"`
+	Seed *v1.SecretReference `json:"seed,omitempty"`
 
 	//+kubebuilder:optional
 	// AdditionalUsers defines the additional users to be created
 	AdditionalUsers *AdditionalUsers `json:"additionalUsers,omitempty"`
+
+	//+kubebuilder:optional
+	// DatabaseConnectionReference is the reference to a database connection. This makes it possible for the
+	// database provider to update the database request if necessary by updating the referenced object.
+	DatabaseConnectionReference *DatabaseConnectionReference `json:"databaseConnectionReference,omitempty"`
 
 	//+kubebuilder:default:=true
 	// DropDatabaseOnDelete defines if the database should be dropped when the request is deleted
 	DropDatabaseOnDelete bool `json:"dropDatabaseOnDelete,omitempty"`
 
 	//+kubebuilder:optional
-	// DatabaseConnectionReference is the reference to a database connection
-	DatabaseConnectionReference *DatabaseConnectionReference `json:"databaseConnectionReference,omitempty"`
+	// ForcedReconcilation is a timestamp based field to force the reconciliation of the database request
+	// This field is used to force the reconciliation of the database request.
+	ForcedReconcilation *metav1.Time `json:"forcedReconcilation,omitempty"`
 }
 
 // DatabaseRequestStatus defines the observed state of DatabaseRequest
@@ -91,6 +99,10 @@ type DatabaseRequestStatus struct {
 
 	// ObservedGeneration is the last observed generation
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// ObservedDatabaseConnectionReference is the observed database connection reference
+	// This is a way for the controller to know if the database provider has updated the database connection.
+	ObservedDatabaseConnectionReference *DatabaseConnectionReference `json:"observedDatabaseConnectionReference,omitempty"`
 }
 
 //+kubebuilder:object:root=true

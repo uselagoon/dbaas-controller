@@ -74,7 +74,15 @@ type DatabaseMySQLProviderSpec struct {
 	MySQLConnections []MySQLConnection `json:"mysqlConnections"`
 }
 
-type MySQLConnectionVersion struct {
+type MySQLConnectionStatus struct {
+	//+kubebuilder:required
+	// Name is the name of the MySQL database connection
+	// it is used to identify the connection. Please use a unique name
+	// for each connection. This field will be used in the DatabaseRequest
+	// to reference the connection. The databasemysqlprovider controller will
+	// error if the name is not unique.
+	Name string `json:"name"`
+
 	//+kubebuilder:required
 	// Hostname is the hostname of the MySQL database
 	Hostname string `json:"hostname"`
@@ -82,6 +90,17 @@ type MySQLConnectionVersion struct {
 	//+kubebuilder:required
 	// MySQLVersion is the version of the MySQL database
 	MySQLVersion string `json:"mysqlVersion"`
+
+	//+kubebuilder:required
+	//+kubebuilder:validation:Required
+	// Enabled is a flag to indicate whether a MySQL database is enabled or not
+	Enabled bool `json:"enabled"`
+
+	//+kubebuilder:required
+	//+kubebuilder:validation:Required
+	//+kubebuilder:validation:Enum=available;unavailable
+	// Status is the status of the MySQL database
+	Status string `json:"status"`
 }
 
 // DatabaseMySQLProviderStatus defines the observed state of DatabaseMySQLProvider
@@ -89,8 +108,8 @@ type DatabaseMySQLProviderStatus struct {
 	// Conditions defines the status conditions
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
-	// MySQLConnectionVersions defines the version of the MySQL database
-	MySQLConnectionVersions []MySQLConnectionVersion `json:"mysqlConnectionVersions,omitempty"`
+	// MySQLConnectionStatus provides the status of the MySQL database
+	MySQLConnectionStatus []MySQLConnectionStatus `json:"mysqlConnectionStatus,omitempty"`
 
 	// ObservedGeneration is the last observed generation
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`

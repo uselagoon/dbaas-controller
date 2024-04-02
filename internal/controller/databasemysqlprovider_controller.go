@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -155,11 +156,13 @@ func (r *DatabaseMySQLProviderReconciler) Reconcile(ctx context.Context, req ctr
 			)
 		}
 		mySQLConns = append(mySQLConns, mySQLConn{
+			name:             conn.Name,
 			hostname:         conn.Hostname,
 			replicaHostnames: conn.ReplicaHostnames,
 			password:         password,
 			port:             conn.Port,
 			username:         conn.Username,
+			enabled:          conn.Enabled,
 		})
 		uniqueNames[conn.Hostname] = struct{}{}
 	}
@@ -173,27 +176,83 @@ func (r *DatabaseMySQLProviderReconciler) Reconcile(ctx context.Context, req ctr
 		)
 	}
 
-	mySQLVersions := make([]crdv1alpha1.MySQLConnectionVersion, 0, len(mySQLConns))
+	mySQLStatus := make([]crdv1alpha1.MySQLConnectionStatus, 0, len(mySQLConns))
+	errors := make([]error, 0, len(mySQLConns))
+	foundEnabledMySQL := false
 	for _, conn := range mySQLConns {
 		// make a ping to the database to check if it's up and running and we can connect to it
 		// if not, we should return an error and set the status to 0
+		// Note we could periodically check the status of the database and update the status accordingly...
 		if err := r.MySQLClient.Ping(ctx, conn.getDSN()); err != nil {
-			return r.handleError(ctx, instance, "db-ping", err)
+			errors = append(errors, err)
+			mySQLStatus = append(mySQLStatus, crdv1alpha1.MySQLConnectionStatus{
+				Name:     conn.name,
+				Hostname: conn.hostname,
+				Status:   "unavailable",
+				Enabled:  conn.enabled,
+			})
+			continue
 		}
 		version, err := r.MySQLClient.Version(ctx, conn.getDSN())
 		if err != nil {
-			return r.handleError(ctx, instance, "db-version", err)
+			errors = append(errors, err)
+			mySQLStatus = append(mySQLStatus, crdv1alpha1.MySQLConnectionStatus{
+				Name:     conn.name,
+				Hostname: conn.hostname,
+				Status:   "unavailable",
+				Enabled:  conn.enabled,
+			})
+			continue
 		}
+
+		// check if the database is initialized
+		err = r.MySQLClient.Initialize(ctx, conn.getDSN())
+		if err != nil {
+			errors = append(errors, err)
+			mySQLStatus = append(mySQLStatus, crdv1alpha1.MySQLConnectionStatus{
+				Name:     conn.name,
+				Hostname: conn.hostname,
+				Status:   "unavailable",
+				Enabled:  conn.enabled,
+			})
+			continue
+		}
+
 		promDatabaseMySQLProviderConnectionVersion.WithLabelValues(
 			req.Name, instance.Spec.Scope, conn.hostname, conn.username, version).Set(1)
-		mySQLVersions = append(mySQLVersions, crdv1alpha1.MySQLConnectionVersion{
+		mySQLStatus = append(mySQLStatus, crdv1alpha1.MySQLConnectionStatus{
+			Name:         conn.name,
 			Hostname:     conn.hostname,
 			MySQLVersion: version,
+			Status:       "available",
+			Enabled:      conn.enabled,
 		})
+
+		if conn.enabled {
+			foundEnabledMySQL = true
+		}
 	}
 
-	instance.Status.MySQLConnectionVersions = mySQLVersions
+	instance.Status.MySQLConnectionStatus = mySQLStatus
 	instance.Status.ObservedGeneration = instance.Generation
+
+	if len(errors) == len(mySQLConns) {
+		return r.handleError(
+			ctx,
+			instance,
+			"mysql-connection",
+			fmt.Errorf("failed to connect to any of the MySQL databases: %v", errors),
+		)
+	}
+	if !foundEnabledMySQL {
+		return r.handleError(
+			ctx,
+			instance,
+			"mysql-connection",
+			fmt.Errorf("no enabled working MySQL database found"),
+		)
+	}
+
 	// update the status condition to ready
 	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
 		Type:    "Ready",
@@ -246,11 +305,13 @@ func (r *DatabaseMySQLProviderReconciler) handleError(
 
 // mysqlConn is the connection to a MySQL database
 type mySQLConn struct {
+	name             string
 	hostname         string
 	replicaHostnames []string
 	password         string
 	port             int
 	username         string
+	enabled          bool
 }
 
 // getDSN constructs the DSN string for the MySQL connection.
@@ -264,5 +325,8 @@ func (r *DatabaseMySQLProviderReconciler) SetupWithManager(mgr ctrl.Manager) err
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&crdv1alpha1.DatabaseMySQLProvider{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		// let's set the max concurrent reconciles to 1 as we don't want to run multiple reconciles at the same time
+		// although we could also change this and guard it by the name of the database provider
+		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Complete(r)
 }

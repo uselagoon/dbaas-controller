@@ -35,29 +35,36 @@ import (
 
 var _ = Describe("DatabaseMySQLProvider Controller", func() {
 	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+		const resourceName = "mysql-provider-test"
 
 		ctx := context.Background()
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Namespace: "default",
 		}
 		databasemysqlprovider := &crdv1alpha1.DatabaseMySQLProvider{}
 
 		BeforeEach(func() {
 			By("creating the custom resource for the Kind DatabaseMySQLProvider")
-			secret := &v1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-secret-mysql",
-					Namespace: "default",
-				},
-				StringData: map[string]string{
-					"password": "test-password",
-				},
+			secret := &v1.Secret{}
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "test-mysql-provider-secret",
+				Namespace: "default",
+			}, secret)
+			if err != nil && errors.IsNotFound(err) {
+				secret = &v1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-mysql-provider-secret",
+						Namespace: "default",
+					},
+					StringData: map[string]string{
+						"password": "test-password",
+					},
+				}
+				err = k8sClient.Create(ctx, secret)
+				Expect(err).NotTo(HaveOccurred())
 			}
-			err := k8sClient.Create(ctx, secret)
-			Expect(err).NotTo(HaveOccurred())
 
 			err = k8sClient.Get(ctx, typeNamespacedName, databasemysqlprovider)
 			if err != nil && errors.IsNotFound(err) {
@@ -78,6 +85,7 @@ var _ = Describe("DatabaseMySQLProvider Controller", func() {
 								},
 								Port:     3306,
 								Username: "test-username",
+								Enabled:  true,
 							},
 						},
 					},
@@ -116,8 +124,12 @@ var _ = Describe("DatabaseMySQLProvider Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+			// check status of the resource
+			err = k8sClient.Get(ctx, typeNamespacedName, databasemysqlprovider)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(len(databasemysqlprovider.Status.Conditions)).To(Equal(1))
+			Expect(databasemysqlprovider.Status.Conditions[0].Status).To(Equal(metav1.ConditionTrue))
+			Expect(databasemysqlprovider.Status.Conditions[0].Type).To(Equal("Ready"))
 		})
 	})
 })
