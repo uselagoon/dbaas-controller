@@ -128,17 +128,25 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	if databaseRequest.Status.ObservedGeneration >= databaseRequest.Generation {
-		logger.Info("No updates to reconcile")
-		r.Recorder.Event(databaseRequest, v1.EventTypeNormal, "ReconcileSkipped", "No updates to reconcile")
-		return ctrl.Result{}, nil
+	// Check if we need to reconcile based on Generation and ObservedGeneration but only if
+	// the status condition is not false. This makes sure that in case of an error the controller
+	// will try to reconcile again.
+	if databaseRequest.Status.Conditions != nil && meta.IsStatusConditionTrue(databaseRequest.Status.Conditions, "Ready") {
+		if databaseRequest.Status.ObservedGeneration >= databaseRequest.Generation {
+			logger.Info("No updates to reconcile")
+			r.Recorder.Event(databaseRequest, v1.EventTypeNormal, "ReconcileSkipped", "No updates to reconcile")
+			return ctrl.Result{}, nil
+		}
 	}
 
 	if databaseRequest.Spec.DatabaseConnectionReference == nil {
 		if err := r.createDatabase(ctx, databaseRequest); err != nil {
 			return r.handleError(ctx, databaseRequest, "create-database", err)
 		}
-		return ctrl.Result{}, nil
+		if databaseRequest.Spec.DatabaseConnectionReference == nil {
+			return r.handleError(
+				ctx, databaseRequest, "missing-connection-reference", errors.New("missing database connection reference"))
+		}
 	}
 
 	if databaseRequest.Status.ObservedDatabaseConnectionReference != databaseRequest.Spec.DatabaseConnectionReference {
@@ -192,6 +200,15 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			Message: "The database request has been changed",
 		})
 		r.Recorder.Event(databaseRequest, "Normal", "DatabaseRequestUpdated", "The database request has been updated")
+	} else {
+		// set the status condition to true if the database request has been created
+		meta.SetStatusCondition(&databaseRequest.Status.Conditions, metav1.Condition{
+			Type:    "Ready",
+			Status:  metav1.ConditionTrue,
+			Reason:  "DatabaseRequestCreated",
+			Message: "The database request has been created",
+		})
+		r.Recorder.Event(databaseRequest, "Normal", "DatabaseRequestUnchanged", "The database request has been created")
 	}
 
 	promDatabaseRequestReconcileStatus.With(promLabels(databaseRequest, "")).Set(1)
@@ -253,7 +270,8 @@ func (r *DatabaseRequestReconciler) handleService(
 					Name:      serviceName,
 					Namespace: databaseRequest.Namespace,
 					Labels: map[string]string{
-						"service.lagoon.sh/dbaas": "true", // The label could be used to find services in case the hostname changed.
+						"service.lagoon.sh/dbaas":    "true", // The label could be used to find services in case the hostname changed.
+						"app.kubernetes.io/instance": databaseRequest.Name,
 					},
 				},
 				Spec: v1.ServiceSpec{
@@ -299,7 +317,8 @@ func (r *DatabaseRequestReconciler) handleSecret(
 					Name:      databaseRequest.Name,
 					Namespace: databaseRequest.Namespace,
 					Labels: map[string]string{
-						"secret.lagoon.sh/dbaas": "true",
+						"secret.lagoon.sh/dbaas":     "true",
+						"app.kubernetes.io/instance": databaseRequest.Name,
 					},
 				},
 				Data: dbInfo.getSecretData(databaseRequest.Spec.Type, serviceName),
@@ -396,9 +415,8 @@ func (r *DatabaseRequestReconciler) createDatabase(
 		if err := r.mysqlCreation(ctx, databaseRequest); err != nil {
 			return fmt.Errorf("mysql db creation failed: %w", err)
 		}
-		// update the status
-		if err := r.Status().Update(ctx, databaseRequest); err != nil {
-			return fmt.Errorf("mysql db creation failed to update status: %w", err)
+		if databaseRequest.Spec.DatabaseConnectionReference == nil {
+			return fmt.Errorf("mysql db creation failed due to missing database connection reference")
 		}
 	case "mariadb":
 		// handle mariadb creation
@@ -413,24 +431,6 @@ func (r *DatabaseRequestReconciler) createDatabase(
 		// this should never happen, but just in case
 		logger.Error(ErrInvalidDatabaseType, "Unsupported database type", "type", databaseRequest.Spec.Type)
 		return fmt.Errorf("failed to create database: %w", ErrInvalidDatabaseType)
-	}
-	// set the status condition to true if the database request has been created
-	meta.SetStatusCondition(&databaseRequest.Status.Conditions, metav1.Condition{
-		Type:    "Ready",
-		Status:  metav1.ConditionTrue,
-		Reason:  "DatabaseRequestCreated",
-		Message: "The database request has been created",
-	})
-	r.Recorder.Event(databaseRequest, "Normal", "DatabaseRequestUnchanged", "The database request has been created")
-
-	promDatabaseRequestReconcileStatus.With(promLabels(databaseRequest, "")).Set(1)
-	databaseRequest.Status.ObservedGeneration = databaseRequest.Generation
-
-	// update the status
-	if err := r.Status().Update(ctx, databaseRequest); err != nil {
-		promDatabaseRequestReconcileErrorCounter.With(
-			promLabels(databaseRequest, "update-status")).Inc()
-		return err
 	}
 
 	return nil

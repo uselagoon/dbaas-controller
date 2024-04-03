@@ -122,11 +122,15 @@ func (r *DatabaseMySQLProviderReconciler) Reconcile(ctx context.Context, req ctr
 		return ctrl.Result{}, nil
 	}
 
-	// Check if we need to reconcile based on Generation and ObservedGeneration
-	if instance.Status.ObservedGeneration >= instance.Generation {
-		logger.Info("No updates to reconcile")
-		r.Recorder.Event(instance, v1.EventTypeNormal, "ReconcileSkipped", "No updates to reconcile")
-		return ctrl.Result{}, nil
+	// Check if we need to reconcile based on Generation and ObservedGeneration but only if
+	// the status condition is not false. This makes sure that in case of an error the controller
+	// will try to reconcile again.
+	if instance.Status.Conditions != nil && meta.IsStatusConditionTrue(instance.Status.Conditions, "Ready") {
+		if instance.Status.ObservedGeneration >= instance.Generation {
+			logger.Info("No updates to reconcile")
+			r.Recorder.Event(instance, v1.EventTypeNormal, "ReconcileSkipped", "No updates to reconcile")
+			return ctrl.Result{}, nil
+		}
 	}
 
 	if controllerutil.AddFinalizer(instance, databaseMySQLProviderFinalizer) {

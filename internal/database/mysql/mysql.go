@@ -248,7 +248,8 @@ func (mi *MySQLImpl) CreateDatabase(ctx context.Context, dsn, name, namespace st
 
 	// Create the user and grant permissions
 	// Use prepared statements to avoid SQL injection vulnerabilities.
-	_, err = db.ExecContext(ctx, fmt.Sprintf("CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY ?", database.username), database.password)
+	_, err = db.ExecContext(
+		ctx, fmt.Sprintf("CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s'", database.username, database.password))
 	if err != nil {
 		return fmt.Errorf("create database error creating user `%s`: %w", database.username, err)
 	}

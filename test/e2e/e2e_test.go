@@ -37,6 +37,9 @@ var _ = Describe("controller", Ordered, func() {
 		By("installing the cert-manager")
 		Expect(utils.InstallCertManager()).To(Succeed())
 
+		By("installing MySQL pod")
+		Expect(utils.InstallMySQL()).To(Succeed())
+
 		By("creating manager namespace")
 		cmd := exec.Command("kubectl", "create", "ns", namespace)
 		_, _ = utils.Run(cmd)
@@ -49,9 +52,43 @@ var _ = Describe("controller", Ordered, func() {
 		By("uninstalling the cert-manager bundle")
 		utils.UninstallCertManager()
 
-		By("removing manager namespace")
-		cmd := exec.Command("kubectl", "delete", "ns", namespace)
+		By("removing the DatabaseMySQLProvider resource")
+		// we enforce the deletion by removing the finalizer
+		cmd := exec.Command(
+			"kubectl",
+			"patch",
+			"databasemysqlprovider",
+			"databasemysqlprovider-sample",
+			"-p",
+			`{"metadata":{"finalizers":[]}}`,
+			"--type=merge",
+		)
 		_, _ = utils.Run(cmd)
+
+		cmd = exec.Command("kubectl", "delete", "--force", "databasemysqlprovider", "databasemysqlprovider-sample")
+		_, _ = utils.Run(cmd)
+
+		By("removing the DatabaseRequest resource")
+		// we enforce the deletion by removing the finalizer
+		cmd = exec.Command(
+			"kubectl",
+			"patch",
+			"databaserequest",
+			"databaserequest-sample",
+			"-p",
+			`{"metadata":{"finalizers":[]}}`,
+			"--type=merge",
+		)
+		_, _ = utils.Run(cmd)
+		cmd = exec.Command("kubectl", "delete", "--force", "databaserequest", "databaserequest-sample")
+		_, _ = utils.Run(cmd)
+
+		By("removing manager namespace")
+		cmd = exec.Command("kubectl", "delete", "ns", namespace)
+		_, _ = utils.Run(cmd)
+
+		By("uninstalling MySQL pod")
+		utils.UninstallMySQLPod()
 	})
 
 	Context("Operator", func() {
@@ -74,6 +111,7 @@ var _ = Describe("controller", Ordered, func() {
 			By("installing CRDs")
 			cmd = exec.Command("make", "install")
 			_, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
 			By("deploying the controller-manager")
 			cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectimage))
@@ -116,6 +154,57 @@ var _ = Describe("controller", Ordered, func() {
 			}
 			EventuallyWithOffset(1, verifyControllerUp, time.Minute, time.Second).Should(Succeed())
 
+			By("creating a DatabaseMySQLProvider resource")
+			cmd = exec.Command("kubectl", "apply", "-f", "config/samples/crd_v1alpha1_databasemysqlprovider.yaml")
+			_, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+			By("validating that the DatabaseMySQLProvider resource is created")
+			cmd = exec.Command(
+				"kubectl",
+				"wait",
+				"--for=condition=Ready",
+				"databasemysqlprovider",
+				"databasemysqlprovider-sample",
+				"--timeout=60s",
+			)
+			_, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+			By("creating a DatabaseRequest resource")
+			cmd = exec.Command("kubectl", "apply", "-f", "config/samples/crd_v1alpha1_databaserequest.yaml")
+			_, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+			By("validating that the DatabaseRequest resource is created")
+			cmd = exec.Command(
+				"kubectl",
+				"wait",
+				"--for=condition=Ready",
+				"databaserequest",
+				"databaserequest-sample",
+				"--timeout=60s",
+			)
+			_, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+			// verify that the service and secret got created
+			By("validating that the service and secret are created")
+			cmd = exec.Command(
+				"kubectl",
+				"get",
+				"service",
+				"-n", namespace,
+				"-l", "app.kubernetes.io/instance=databaserequest-sample",
+			)
+
+			serviceOutput, err := utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			serviceNames := utils.GetNonEmptyLines(string(serviceOutput))
+			ExpectWithOffset(1, serviceNames).Should(HaveLen(1))
+
+			// uncomment to debug ...
+			// time.Sleep(15 * time.Minute)
 		})
 	})
 })

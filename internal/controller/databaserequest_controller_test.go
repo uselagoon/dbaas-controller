@@ -23,8 +23,10 @@ import (
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -143,7 +145,7 @@ var _ = Describe("DatabaseRequest Controller", func() {
 
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-			fakeRecoder := record.NewFakeRecorder(1)
+			fakeRecoder := record.NewFakeRecorder(100)
 			controllerReconciler := &DatabaseRequestReconciler{
 				Client:      k8sClient,
 				Scheme:      k8sClient.Scheme(),
@@ -158,8 +160,26 @@ var _ = Describe("DatabaseRequest Controller", func() {
 				},
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			By("Checking state of secret and service")
+			secret := &v1.Secret{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      dbRequestResource,
+				Namespace: "default",
+			}, secret)
+			Expect(err).NotTo(HaveOccurred())
+
+			// use label selector to get the service
+			serviceList := &v1.ServiceList{}
+			err = k8sClient.List(ctx, serviceList, &client.ListOptions{
+				Namespace: "default",
+				LabelSelector: labels.SelectorFromSet(
+					map[string]string{
+						"app.kubernetes.io/instance": dbRequestResource,
+					},
+				),
+			})
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })

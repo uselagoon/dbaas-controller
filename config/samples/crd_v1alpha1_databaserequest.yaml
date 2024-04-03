@@ -9,4 +9,5 @@ metadata:
     app.kubernetes.io/created-by: dbaas-controller
   name: databaserequest-sample
 spec:
-  # TODO(user): Add fields here
+  scope: development
+  type: mysql

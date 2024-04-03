@@ -11,7 +11,7 @@ It allows for provisiong and deprovisioning of shared MySQL/MariaDB, PostgreSQL,
 WIP - Work in Progress
 There is still a lot of work to be done on this project. The current status is that the controller is able to provision and deprovision MySQL databases. But there is still a lot of work to be done to make it production ready.
 
-- [ ] Setup e2e tests
+- [x] Setup e2e tests
 - [x] Provision MySQL databases
 - [x] Deprovision MySQL databases
 - [ ] Provision PostgreSQL databases
@@ -19,6 +19,24 @@ There is still a lot of work to be done on this project. The current status is t
 - [ ] Provision MongoDB databases
 - [ ] Deprovision MongoDB databases
 - [ ] Plan to migrate from old `dbaaas-operator` to `dbaas-controller`
+
+## Testing
+
+To run the unit tests, you can use the following command:
+
+```bash
+make test
+```
+
+To run the end-to-end tests, you can use the following command:
+
+```bash
+make test-e2e
+```
+
+Note that the end-to-end tests require a kind cluster to be running. Make sure to have kind installed and running before running the tests.
+
+DANGER ZONE: Do not run the end-to-end tests on a production cluster. The tests will create and delete resources in the cluster!!!
 
 ## Installation
 

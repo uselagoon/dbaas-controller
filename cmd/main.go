@@ -127,8 +127,9 @@ func main() {
 	}
 
 	if err = (&controller.DatabaseRequestReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		MySQLClient: &mysql.MySQLImpl{},
 	}).SetupWithManager(mgr, maxConcurrentReconciles); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DatabaseRequest")
 		os.Exit(1)
@@ -136,7 +137,7 @@ func main() {
 	if err = (&controller.DatabaseMySQLProviderReconciler{
 		Client:      mgr.GetClient(),
 		Scheme:      mgr.GetScheme(),
-		MySQLClient: &mysql.MySQLMock{}, // change to mysql.MySQLImpl{} to use the real implementation
+		MySQLClient: &mysql.MySQLImpl{},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DatabaseMySQLProvider")
 		os.Exit(1)

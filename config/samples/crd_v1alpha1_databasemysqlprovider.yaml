@@ -9,4 +9,13 @@ metadata:
     app.kubernetes.io/created-by: dbaas-controller
   name: databasemysqlprovider-sample
 spec:
-  # TODO(user): Add fields here
+  scope: development
+  mysqlConnections:
+    - name: primary-test-mysql-connection
+      hostname: mysql-service.mysql
+      passwordSecretRef:
+        name: mysql-secret
+        namespace: mysql
+      port: 3306
+      username: root
+      enabled: true
