@@ -12,7 +12,7 @@ WIP - Work in Progress
 There is still a lot of work to be done on this project. The current status is that the controller is able to provision and deprovision MySQL databases. But there is still a lot of work to be done to make it production ready.
 
 - [x] Setup e2e tests
-- [x] Provision MySQL databases
+- [x] Provision MySQL databases (basic) - no support for additional users, seeding, etc.
 - [x] Deprovision MySQL databases
 - [ ] Provision PostgreSQL databases
 - [ ] Deprovision PostgreSQL databases
