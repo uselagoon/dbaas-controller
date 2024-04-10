@@ -21,8 +21,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// AdditionalUsers defines the additional users to be created
-type AdditionalUsers struct {
+// AdditionalUser defines the additional user to be created
+type AdditionalUser struct {
 	//+kubebuilder:validation:Required
 	//+kubebuilder:validation:Enum=read-only;read-write
 	//+kubebuilder:default:=read-only
@@ -32,10 +32,9 @@ type AdditionalUsers struct {
 
 	//+kubebuilder:required
 	//+kubebuilder:validation:Required
-	//+kubebuilder:validation:Minimum=1
-	//+kubebuilder:validation:Maximum=32
-	// Count the number of how many accounts should be created
-	Count int `json:"count"`
+	// Name is the name of the service we are creating. Similar to the name of the DatabaseRequestSpec.
+	// for example mariadb-read-only-0
+	Name string `json:"name"`
 }
 
 // DatabaseConnectionReference defines the reference to a database connection
@@ -53,6 +52,12 @@ type DatabaseConnectionReference struct {
 
 // DatabaseRequestSpec defines the desired state of DatabaseRequest
 type DatabaseRequestSpec struct {
+	//+kubebuilder:required
+	//+kubebuilder:validation:Required
+	// Name is used for the service name and the prefix in the secret data
+	// for example mariadb-0
+	Name string `json:"name"`
+
 	//+kubebuilder:required
 	//+kubebuilder:validation:Required
 	//+kubebuilder:validation:Enum=production;development;custom
@@ -75,7 +80,7 @@ type DatabaseRequestSpec struct {
 
 	//+kubebuilder:optional
 	// AdditionalUsers defines the additional users to be created
-	AdditionalUsers *AdditionalUsers `json:"additionalUsers,omitempty"`
+	AdditionalUsers []AdditionalUser `json:"additionalUsers,omitempty"`
 
 	//+kubebuilder:optional
 	// DatabaseConnectionReference is the reference to a database connection. This makes it possible for the
@@ -92,17 +97,34 @@ type DatabaseRequestSpec struct {
 	ForcedReconcilation *metav1.Time `json:"forcedReconcilation,omitempty"`
 }
 
+// DatabaseInfo provides some database information
+type DatabaseInfo struct {
+	//+kubebuilder:required
+	// Username is the username of the database
+	Username string `json:"username"`
+	//+kubebuilder:required
+	// DatabaseName is the name of the database
+	Databasename string `json:"databasename"`
+}
+
 // DatabaseRequestStatus defines the observed state of DatabaseRequest
 type DatabaseRequestStatus struct {
+	//+kubebuilder:optional
 	// Conditions is the observed conditions
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
+	//+kubebuilder:optional
 	// ObservedGeneration is the last observed generation
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
+	//+kubebuilder:optional
 	// ObservedDatabaseConnectionReference is the observed database connection reference
 	// This is a way for the controller to know if the database provider has updated the database connection.
 	ObservedDatabaseConnectionReference *DatabaseConnectionReference `json:"observedDatabaseConnectionReference,omitempty"`
+
+	//+kubebuilder:optional
+	// DatabaseInfo is the database information
+	DatabaseInfo *DatabaseInfo `json:"databaseInfo,omitempty"`
 }
 
 //+kubebuilder:object:root=true

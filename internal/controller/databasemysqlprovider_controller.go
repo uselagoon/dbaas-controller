@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -325,6 +326,13 @@ func (mc *mySQLConn) getDSN() string {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *DatabaseMySQLProviderReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// register metrics
+	metrics.Registry.MustRegister(
+		promDatabaseMySQLProviderReconcileCounter,
+		promDatabaseMySQLProviderReconcileErrorCounter,
+		promDatabaseMySQLProviderStatus,
+		promDatabaseMySQLProviderConnectionVersion,
+	)
 	r.Recorder = mgr.GetEventRecorderFor("databasemysqlprovider_controller")
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&crdv1alpha1.DatabaseMySQLProvider{}).

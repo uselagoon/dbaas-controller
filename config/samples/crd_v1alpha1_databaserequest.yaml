@@ -9,5 +9,6 @@ metadata:
     app.kubernetes.io/created-by: dbaas-controller
   name: databaserequest-sample
 spec:
+  name: first-mysql-db
   scope: development
   type: mysql

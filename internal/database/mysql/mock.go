@@ -23,16 +23,16 @@ func (mi *MySQLMock) Initialize(ctx context.Context, dsn string) error {
 }
 
 // CreateDatabase creates a database in the MySQL database if it does not exist.
-func (mi *MySQLMock) CreateDatabase(ctx context.Context, dsn, name, namespace string) error {
-	return nil
+func (mi *MySQLMock) CreateDatabase(ctx context.Context, dsn, name, namespace string) (DatabaseInfo, error) {
+	return DatabaseInfo{Username: "user", Password: "pass", Dbname: "db"}, nil
 }
 
 func (mi *MySQLMock) DropDatabase(ctx context.Context, dsn, name, namespace string) error {
 	return nil
 }
 
-func (mi *MySQLMock) GetDatabase(ctx context.Context, dsn, name, namespace string) (string, string, string, error) {
-	return "user", "pass", "db", nil
+func (mi *MySQLMock) GetDatabase(ctx context.Context, dsn, name, namespace string) (DatabaseInfo, error) {
+	return DatabaseInfo{Username: "user", Password: "pass", Dbname: "db"}, nil
 }
 
 func (mi *MySQLMock) Load(ctx context.Context, dsn string) (int, error) {

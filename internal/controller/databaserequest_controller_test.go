@@ -108,6 +108,7 @@ var _ = Describe("DatabaseRequest Controller", func() {
 					Spec: crdv1alpha1.DatabaseRequestSpec{
 						Scope:                "development",
 						Type:                 "mysql",
+						Name:                 "mysql-test-database",
 						DropDatabaseOnDelete: false,
 					},
 				}

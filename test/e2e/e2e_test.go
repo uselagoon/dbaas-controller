@@ -89,6 +89,14 @@ var _ = Describe("controller", Ordered, func() {
 
 		By("uninstalling MySQL pod")
 		utils.UninstallMySQLPod()
+
+		By("removing service and secret")
+		cmd = exec.Command(
+			"kubectl", "delete", "service", "-n", "default", "-l", "app.kubernetes.io/instance=databaserequest-sample")
+		_, _ = utils.Run(cmd)
+		cmd = exec.Command(
+			"kubectl", "delete", "secret", "-n", "default", "-l", "app.kubernetes.io/instance=databaserequest-sample")
+		_, _ = utils.Run(cmd)
 	})
 
 	Context("Operator", func() {
@@ -189,22 +197,68 @@ var _ = Describe("controller", Ordered, func() {
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
 			// verify that the service and secret got created
-			By("validating that the service and secret are created")
+			By("validating that the service is created")
 			cmd = exec.Command(
 				"kubectl",
 				"get",
 				"service",
-				"-n", namespace,
+				"-n", "default",
 				"-l", "app.kubernetes.io/instance=databaserequest-sample",
 			)
-
 			serviceOutput, err := utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 			serviceNames := utils.GetNonEmptyLines(string(serviceOutput))
+			ExpectWithOffset(1, serviceNames).Should(HaveLen(2))
+			ExpectWithOffset(1, serviceNames[1]).Should(ContainSubstring("first-mysql-db"))
+
+			By("validating that the secret is created")
+			cmd = exec.Command(
+				"kubectl",
+				"get",
+				"secret",
+				"-n", "default",
+				"-l", "app.kubernetes.io/instance=databaserequest-sample",
+			)
+			secretOutput, err := utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			secretNames := utils.GetNonEmptyLines(string(secretOutput))
+			ExpectWithOffset(1, secretNames).Should(HaveLen(2))
+
+			By("deleting the DatabaseRequest resource the database is getting deprovisioned")
+			cmd = exec.Command("kubectl", "delete", "databaserequest", "databaserequest-sample")
+			_, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+			By("validating that the service is deleted")
+			cmd = exec.Command(
+				"kubectl",
+				"get",
+				"service",
+				"-n", "default",
+				"-l", "app.kubernetes.io/instance=databaserequest-sample",
+			)
+			serviceOutput, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			serviceNames = utils.GetNonEmptyLines(string(serviceOutput))
 			ExpectWithOffset(1, serviceNames).Should(HaveLen(1))
 
+			By("validating that the secret is deleted")
+			cmd = exec.Command(
+				"kubectl",
+				"get",
+				"secret",
+				"-n", "default",
+				"-l", "app.kubernetes.io/instance=databaserequest-sample",
+			)
+			secretOutput, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			secretNames = utils.GetNonEmptyLines(string(secretOutput))
+			ExpectWithOffset(1, secretNames).Should(HaveLen(1))
+
+			// TODO(marco): maybe add a test connecting to the mysql database...
+
 			// uncomment to debug ...
-			// time.Sleep(15 * time.Minute)
+			//time.Sleep(15 * time.Minute)
 		})
 	})
 })

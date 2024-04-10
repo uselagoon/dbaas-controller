@@ -50,6 +50,8 @@ func InstallMySQL() error {
 	cmd.Dir = dir
 	fmt.Fprintf(GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
 	_, err = Run(cmd)
+	// Note that we don't wait for the pod to be ready here. This is a good test for the controller
+	// to see if it can handle mysql server not being ready.
 	return err
 }
 

@@ -127,16 +127,17 @@ The `DatabaseRequest` Custom Resource Definition (CRD) provides a mechanism for 
 
 ### DatabaseRequest Spec Fields
 
+- name (required): Defines the intended service name for the database. This field is required and must be unique within the namespace.
 - scope (required): Defines the intended use of the requested database. It helps in configuring the database appropriately for its intended environment. Valid options are production, development, and custom. The default value is development.
 - type (required): Specifies the type of database requested. Supported types are mysql, mariadb, postgres, and mongodb.
 - seed (optional): A reference to a local Kubernetes secret within the same namespace that contains data used for seeding the database. This field is optional and intended for initial database setup.
-- additionalUsers (optional): Specifies the creation of additional database users. This nested object includes user types (read-only or read-write) and the count of users to create.
+- additionalUsers (optional): Specifies the creation of additional database users.
 - dropDatabaseOnDelete (optional): Determines whether the database should be automatically dropped (deleted) when the DatabaseRequest resource is deleted from Kubernetes. The default value is true.
 - databaseConnectionReference (optional): A reference to an existing database connection. This field allows the request to specify an existing database connection to be used for the database operation.
 
-- AdditionalUsers Fields
+- AdditionalUser Fields
     - type (required): The type of additional users to create. Can be either read-only or read-write, with read-only being the default.
-    - count (required): The number of users to create of the specified type. Must be between 1 and 32.
+    - name (required): The name of the additional service to add.
 
 ### DatabaseRequest Status Fields
 

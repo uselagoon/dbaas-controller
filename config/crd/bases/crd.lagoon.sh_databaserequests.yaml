@@ -41,25 +41,28 @@ spec:
             properties:
               additionalUsers:
                 description: AdditionalUsers defines the additional users to be created
-                properties:
-                  count:
-                    description: Count the number of how many accounts should be created
-                    maximum: 32
-                    minimum: 1
-                    type: integer
-                  type:
-                    default: read-only
-                    description: |-
-                      Type is the type of user to be created
-                      it can be either "read-only" or "read-write"
-                    enum:
-                    - read-only
-                    - read-write
-                    type: string
-                required:
-                - count
-                - type
-                type: object
+                items:
+                  description: AdditionalUser defines the additional users to be created
+                  properties:
+                    name:
+                      description: |-
+                        Name is the name of the service we are creating. Similar to the name of the DatabaseRequestSpec.
+                        for example mariadb-read-only-0
+                      type: string
+                    type:
+                      default: read-only
+                      description: |-
+                        Type is the type of user to be created
+                        it can be either "read-only" or "read-write"
+                      enum:
+                      - read-only
+                      - read-write
+                      type: string
+                  required:
+                  - name
+                  - type
+                  type: object
+                type: array
               databaseConnectionReference:
                 description: |-
                   DatabaseConnectionReference is the reference to a database connection. This makes it possible for the
@@ -130,6 +133,11 @@ spec:
                   This field is used to force the reconciliation of the database request.
                 format: date-time
                 type: string
+              name:
+                description: |-
+                  Name is used for the service name and the prefix in the secret data
+                  for example mariadb-0
+                type: string
               scope:
                 default: development
                 description: |-
@@ -166,6 +174,7 @@ spec:
                 - mongodb
                 type: string
             required:
+            - name
             - scope
             - type
             type: object
@@ -242,6 +251,19 @@ spec:
                   - type
                   type: object
                 type: array
+              databaseInfo:
+                description: DatabaseInfo is the database information
+                properties:
+                  databasename:
+                    description: DatabaseName is the name of the database
+                    type: string
+                  username:
+                    description: Username is the username of the database
+                    type: string
+                required:
+                - databasename
+                - username
+                type: object
               observedDatabaseConnectionReference:
                 description: |-
                   ObservedDatabaseConnectionReference is the observed database connection reference

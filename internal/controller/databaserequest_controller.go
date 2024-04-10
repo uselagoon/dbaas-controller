@@ -66,7 +66,7 @@ var (
 			Name: "databaserequest_reconcile_error_total",
 			Help: "The total number of reconciled database requests errors",
 		},
-		[]string{"name", "namespace", "scope", "type", "error"},
+		[]string{"name", "namespace", "scope", "type", "username", "databasename", "error"},
 	)
 
 	// promDatabaseRequestReconcileStatus is the status of the reconciled database requests
@@ -75,7 +75,7 @@ var (
 			Name: "databaserequest_reconcile_status",
 			Help: "The status of the reconciled database requests",
 		},
-		[]string{"name", "namespace", "scope", "type"},
+		[]string{"name", "namespace", "scope", "type", "username", "databasename"},
 	)
 )
 
@@ -111,7 +111,7 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	databaseRequest := &crdv1alpha1.DatabaseRequest{}
 	if err := r.Get(ctx, req.NamespacedName, databaseRequest); err != nil {
 		if !apierrors.IsNotFound(err) {
-			promDatabaseRequestReconcileErrorCounter.WithLabelValues(req.Name, req.Namespace, "", "", "get-dbreq").Inc()
+			promDatabaseRequestReconcileErrorCounter.WithLabelValues(req.Name, req.Namespace, "", "", "get-dbreq", "", "").Inc()
 		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -182,42 +182,50 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		logger.Error(ErrInvalidDatabaseType, "Unsupported database type", "type", databaseRequest.Spec.Type)
 	}
 
-	serviceName, serviceChanged, err := r.handleService(ctx, &dbInfo, databaseRequest)
+	serviceChanged, err := r.handleService(ctx, &dbInfo, databaseRequest)
 	if err != nil {
 		return r.handleError(ctx, databaseRequest, "handle-service", err)
 	}
 
-	secretChanged, err := r.handleSecret(ctx, &dbInfo, databaseRequest, serviceName)
+	secretChanged, err := r.handleSecret(ctx, &dbInfo, databaseRequest)
 	if err != nil {
 		return r.handleError(ctx, databaseRequest, "handle-secret", err)
 	}
 
+	promDatabaseRequestReconcileStatus.With(promLabels(databaseRequest, "")).Set(1)
+	databaseRequest.Status.ObservedGeneration = databaseRequest.Generation
+	// update the CR
+	if err := r.Update(ctx, databaseRequest); err != nil {
+		promDatabaseRequestReconcileErrorCounter.With(
+			promLabels(databaseRequest, "cr-update")).Inc()
+		return ctrl.Result{}, err
+	}
+
 	if serviceChanged || secretChanged {
-		meta.SetStatusCondition(&databaseRequest.Status.Conditions, metav1.Condition{
+		if meta.SetStatusCondition(&databaseRequest.Status.Conditions, metav1.Condition{
 			Type:    "Ready",
 			Status:  metav1.ConditionTrue,
 			Reason:  "DatabaseRequestChanged",
 			Message: "The database request has been changed",
-		})
+		}) {
+			if err := r.Status().Update(ctx, databaseRequest); err != nil {
+				return r.handleError(ctx, databaseRequest, "update-status", err)
+			}
+		}
 		r.Recorder.Event(databaseRequest, "Normal", "DatabaseRequestUpdated", "The database request has been updated")
 	} else {
 		// set the status condition to true if the database request has been created
-		meta.SetStatusCondition(&databaseRequest.Status.Conditions, metav1.Condition{
+		if meta.SetStatusCondition(&databaseRequest.Status.Conditions, metav1.Condition{
 			Type:    "Ready",
 			Status:  metav1.ConditionTrue,
 			Reason:  "DatabaseRequestCreated",
 			Message: "The database request has been created",
-		})
+		}) {
+			if err := r.Status().Update(ctx, databaseRequest); err != nil {
+				return r.handleError(ctx, databaseRequest, "update-status", err)
+			}
+		}
 		r.Recorder.Event(databaseRequest, "Normal", "DatabaseRequestUnchanged", "The database request has been created")
-	}
-
-	promDatabaseRequestReconcileStatus.With(promLabels(databaseRequest, "")).Set(1)
-	databaseRequest.Status.ObservedGeneration = databaseRequest.Generation
-	// update the status
-	if err := r.Status().Update(ctx, databaseRequest); err != nil {
-		promDatabaseRequestReconcileErrorCounter.With(
-			promLabels(databaseRequest, "update-status")).Inc()
-		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
 }
@@ -252,12 +260,14 @@ func (r *DatabaseRequestReconciler) handleError(
 	return ctrl.Result{}, err
 }
 
+// handleService creates or updates the service for the database request
+// returns true if the service has been updated
 func (r *DatabaseRequestReconciler) handleService(
-	ctx context.Context, dbInfo *dbInfo, databaseRequest *crdv1alpha1.DatabaseRequest) (string, bool, error) {
+	ctx context.Context, dbInfo *dbInfo, databaseRequest *crdv1alpha1.DatabaseRequest) (bool, error) {
 	// Note at the moment we only have one "primary" connection per database request
 	// Implementing additional users would require to extend the logic here
 	service := &v1.Service{}
-	serviceName := fmt.Sprintf("%s-primary", dbInfo.connName)
+	serviceName := databaseRequest.Spec.Name
 	if err := r.Get(ctx, types.NamespacedName{
 		Name:      serviceName,
 		Namespace: databaseRequest.Namespace,
@@ -270,7 +280,7 @@ func (r *DatabaseRequestReconciler) handleService(
 					Name:      serviceName,
 					Namespace: databaseRequest.Namespace,
 					Labels: map[string]string{
-						"service.lagoon.sh/dbaas":    "true", // The label could be used to find services in case the hostname changed.
+						"dbaas.lagoon.sh/service":    "true", // The label could be used to find services in case the hostname changed.
 						"app.kubernetes.io/instance": databaseRequest.Name,
 					},
 				},
@@ -280,10 +290,10 @@ func (r *DatabaseRequestReconciler) handleService(
 				},
 			}
 			if err := r.Create(ctx, service); err != nil {
-				return serviceName, false, fmt.Errorf("failed to create service %s: %w", serviceName, err)
+				return false, fmt.Errorf("failed to create service %s: %w", serviceName, err)
 			}
 		} else {
-			return serviceName, false, fmt.Errorf("failed to get service %s: %w", serviceName, err)
+			return false, fmt.Errorf("failed to get service %s: %w", serviceName, err)
 		}
 	} else {
 		// update the service if the hostname has changed
@@ -292,18 +302,19 @@ func (r *DatabaseRequestReconciler) handleService(
 			r.Recorder.Event(databaseRequest, "Normal", "UpdateService", "Updating service")
 			service.Spec.ExternalName = dbInfo.hostName
 			if err := r.Update(ctx, service); err != nil {
-				return serviceName, false, fmt.Errorf("failed to update service %s: %w", serviceName, err)
+				return false, fmt.Errorf("failed to update service %s: %w", serviceName, err)
 			}
-			return serviceName, true, nil
+			return true, nil
 		}
 	}
-	return serviceName, false, nil
+	return false, nil
 }
 
 func (r *DatabaseRequestReconciler) handleSecret(
-	ctx context.Context, dbInfo *dbInfo, databaseRequest *crdv1alpha1.DatabaseRequest, serviceName string) (bool, error) {
+	ctx context.Context, dbInfo *dbInfo, databaseRequest *crdv1alpha1.DatabaseRequest) (bool, error) {
 	// Note at the moment we only have one "primary" connection per database request
 	// Implementing additional users would require to extend the logic here
+	serviceName := databaseRequest.Spec.Name
 	secret := &v1.Secret{}
 	if err := r.Get(ctx, types.NamespacedName{
 		Name:      databaseRequest.Name,
@@ -317,11 +328,11 @@ func (r *DatabaseRequestReconciler) handleSecret(
 					Name:      databaseRequest.Name,
 					Namespace: databaseRequest.Namespace,
 					Labels: map[string]string{
-						"secret.lagoon.sh/dbaas":     "true",
+						"dbaas.lagoon.sh/secret":     "true",
 						"app.kubernetes.io/instance": databaseRequest.Name,
 					},
 				},
-				Data: dbInfo.getSecretData(databaseRequest.Spec.Type, serviceName),
+				Data: dbInfo.getSecretData(databaseRequest.Spec.Name, serviceName),
 			}
 			if err := r.Create(ctx, secret); err != nil {
 				return false, fmt.Errorf("failed to create secret %s: %w", databaseRequest.Name, err)
@@ -330,13 +341,13 @@ func (r *DatabaseRequestReconciler) handleSecret(
 			return false, fmt.Errorf("failed to get secret %s: %w", databaseRequest.Name, err)
 		}
 	} else {
-		diff := cmp.Diff(secret.Data, dbInfo.getSecretData(databaseRequest.Spec.Type, serviceName))
+		diff := cmp.Diff(secret.Data, dbInfo.getSecretData(databaseRequest.Spec.Name, serviceName))
 		if diff != "" {
-			log.FromContext(ctx).Info("Updating secret", "diff", diff)
+			log.FromContext(ctx).Info("Updating secret due to diff")
 			r.Recorder.Event(databaseRequest, "Normal", "UpdateSecret", "Updating secret")
-			secret.Data = dbInfo.getSecretData(databaseRequest.Spec.Type, serviceName)
+			secret.Data = dbInfo.getSecretData(databaseRequest.Spec.Name, serviceName)
 			if err := r.Update(ctx, secret); err != nil {
-				return false, fmt.Errorf("failed to update secret: %s: %w", secret.Name, err)
+				return false, fmt.Errorf("failed to update secret %s, %w", databaseRequest.Name, err)
 			}
 			return true, nil
 		}
@@ -373,7 +384,7 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 			return r.handleError(ctx, databaseRequest, "invalid-database-type", ErrInvalidDatabaseType)
 		}
 	}
-	serviceName := fmt.Sprintf("%s-primary", databaseRequest.Spec.DatabaseConnectionReference.Name)
+	serviceName := databaseRequest.Spec.Name
 	if err := r.Delete(ctx, &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceName,
@@ -412,11 +423,14 @@ func (r *DatabaseRequestReconciler) createDatabase(
 		// Note at the moment we only have one "primary" connection per database request
 		// Implementing additional users would require to extend the logic here
 		logger.Info("Creating MySQL database")
-		if err := r.mysqlCreation(ctx, databaseRequest); err != nil {
+		if err := r.mysqlOperation(ctx, create, databaseRequest, nil); err != nil {
 			return fmt.Errorf("mysql db creation failed: %w", err)
 		}
 		if databaseRequest.Spec.DatabaseConnectionReference == nil {
 			return fmt.Errorf("mysql db creation failed due to missing database connection reference")
+		}
+		if databaseRequest.Status.DatabaseInfo == nil {
+			return fmt.Errorf("mysql db creation failed due to missing database info")
 		}
 	case "mariadb":
 		// handle mariadb creation
@@ -438,11 +452,18 @@ func (r *DatabaseRequestReconciler) createDatabase(
 
 // promLabels returns the prometheus labels for the database request
 func promLabels(databaseRequest *crdv1alpha1.DatabaseRequest, withError string) prometheus.Labels {
+	var username, databaseName string
+	if databaseRequest.Status.DatabaseInfo != nil {
+		username = databaseRequest.Status.DatabaseInfo.Username
+		databaseName = databaseRequest.Status.DatabaseInfo.Databasename
+	}
 	labels := prometheus.Labels{
-		"name":      databaseRequest.Name,
-		"namespace": databaseRequest.Namespace,
-		"scope":     databaseRequest.Spec.Scope,
-		"type":      databaseRequest.Spec.Type,
+		"name":         databaseRequest.Name,
+		"namespace":    databaseRequest.Namespace,
+		"scope":        databaseRequest.Spec.Scope,
+		"type":         databaseRequest.Spec.Type,
+		"username":     username,
+		"databasename": databaseName,
 	}
 	if withError != "" {
 		labels["error"] = withError
@@ -477,7 +498,6 @@ const (
 
 // dbInfo is a simple struct to hold the database information
 type dbInfo struct {
-	connName string
 	database string
 	hostName string
 	userName string
@@ -485,13 +505,14 @@ type dbInfo struct {
 	port     int
 }
 
-func (m *dbInfo) getSecretData(kind, serviceName string) map[string][]byte {
+func (m *dbInfo) getSecretData(name, serviceName string) map[string][]byte {
+	name = strings.ToUpper(strings.Replace(name, "-", "_", -1))
 	return map[string][]byte{
-		fmt.Sprintf("%s_USERNAME", strings.ToUpper(kind)): []byte(m.userName),
-		fmt.Sprintf("%s_PASSWORD", strings.ToUpper(kind)): []byte(m.password),
-		fmt.Sprintf("%s_DATABASE", strings.ToUpper(kind)): []byte(m.database),
-		fmt.Sprintf("%s_HOST", strings.ToUpper(kind)):     []byte(serviceName),
-		fmt.Sprintf("%s_PORT", strings.ToUpper(kind)):     []byte(fmt.Sprintf("%d", m.port)),
+		fmt.Sprintf("%s_USERNAME", strings.ToUpper(name)): []byte(m.userName),
+		fmt.Sprintf("%s_PASSWORD", strings.ToUpper(name)): []byte(m.password),
+		fmt.Sprintf("%s_DATABASE", strings.ToUpper(name)): []byte(m.database),
+		fmt.Sprintf("%s_HOST", strings.ToUpper(name)):     []byte(serviceName),
+		fmt.Sprintf("%s_PORT", strings.ToUpper(name)):     []byte(fmt.Sprintf("%d", m.port)),
 	}
 }
 
@@ -566,12 +587,13 @@ func (r *DatabaseRequestReconciler) mysqlOperation(
 	switch operation {
 	case create:
 		log.FromContext(ctx).Info("Creating MySQL database", "database", databaseRequest.Name)
-		if err := r.MySQLClient.CreateDatabase(
+		info, err := r.MySQLClient.CreateDatabase(
 			ctx,
 			conn.getDSN(),
 			databaseRequest.Name,
 			databaseRequest.Namespace,
-		); err != nil {
+		)
+		if err != nil {
 			return fmt.Errorf("mysql db operation %s failed: %w", operation, err)
 		}
 		dbRef := &crdv1alpha1.DatabaseConnectionReference{
@@ -583,8 +605,15 @@ func (r *DatabaseRequestReconciler) mysqlOperation(
 				ResourceVersion: databaseProvider.ResourceVersion,
 			},
 		}
-		databaseRequest.Spec.DatabaseConnectionReference = dbRef
 		databaseRequest.Status.ObservedDatabaseConnectionReference = dbRef
+		databaseRequest.Status.DatabaseInfo = &crdv1alpha1.DatabaseInfo{
+			Username:     info.Username,
+			Databasename: info.Dbname,
+		}
+		if err := r.Status().Update(ctx, databaseRequest); err != nil {
+			return fmt.Errorf("mysql db operation %s failed to update database request: %w", operation, err)
+		}
+		databaseRequest.Spec.DatabaseConnectionReference = dbRef
 		return nil
 	case drop:
 		if err := r.MySQLClient.DropDatabase(
@@ -595,8 +624,11 @@ func (r *DatabaseRequestReconciler) mysqlOperation(
 		); err != nil {
 			return fmt.Errorf("mysql db opration %s failed: %w", operation, err)
 		}
-		databaseRequest.Spec.DatabaseConnectionReference = nil
 		databaseRequest.Status.ObservedDatabaseConnectionReference = nil
+		if err := r.Status().Update(ctx, databaseRequest); err != nil {
+			return fmt.Errorf("mysql db operation %s failed to update database request: %w", operation, err)
+		}
+		databaseRequest.Spec.DatabaseConnectionReference = nil
 		return nil
 	case info:
 		// check if the dbInfo is not nil
@@ -604,7 +636,7 @@ func (r *DatabaseRequestReconciler) mysqlOperation(
 			return fmt.Errorf("mysql db operation %s failed due to missing dbInfo", operation)
 		}
 		// get the database information
-		username, password, dbname, err := r.MySQLClient.GetDatabase(
+		info, err := r.MySQLClient.GetDatabase(
 			ctx,
 			conn.getDSN(),
 			databaseRequest.Name,
@@ -613,10 +645,9 @@ func (r *DatabaseRequestReconciler) mysqlOperation(
 		if err != nil {
 			return fmt.Errorf("mysql db operation %s failed to get database information: %w", operation, err)
 		}
-		databaseInfo.connName = connection.Name
-		databaseInfo.userName = username
-		databaseInfo.password = password
-		databaseInfo.database = dbname
+		databaseInfo.userName = info.Username
+		databaseInfo.password = info.Password
+		databaseInfo.database = info.Dbname
 		databaseInfo.hostName = conn.hostname
 		databaseInfo.port = conn.port
 		return nil
@@ -706,15 +737,6 @@ func (r *DatabaseRequestReconciler) mysqlDeletion(
 		return errors.New("mysql db drop failed due to connection reference is missing")
 	}
 	return r.mysqlOperation(ctx, drop, databaseRequest, nil)
-}
-
-// mysqlCreation creates the MySQL database
-func (r *DatabaseRequestReconciler) mysqlCreation(
-	ctx context.Context,
-	databaseRequest *crdv1alpha1.DatabaseRequest,
-) error {
-	log.FromContext(ctx).Info("Creating MySQL database")
-	return r.mysqlOperation(ctx, create, databaseRequest, nil)
 }
 
 // mysqlInfo retrieves the MySQL database information
