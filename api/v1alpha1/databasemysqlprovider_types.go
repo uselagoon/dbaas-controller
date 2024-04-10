@@ -74,6 +74,7 @@ type DatabaseMySQLProviderSpec struct {
 	MySQLConnections []MySQLConnection `json:"mysqlConnections"`
 }
 
+// MySQLConnectionStatus defines the status of a MySQL database connection
 type MySQLConnectionStatus struct {
 	//+kubebuilder:required
 	// Name is the name of the MySQL database connection

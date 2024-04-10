@@ -88,6 +88,15 @@ type DatabaseRequestReconciler struct {
 	Locks       sync.Map
 }
 
+const (
+	// mysqlType is the MySQL database type
+	mysqlType = "mysql"
+	// postgresType is the PostgreSQL database type
+	postgresType = "postgres"
+	// mongodbType is the MongoDB database type
+	mongodbType = "mongodb"
+)
+
 //+kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=crd.lagoon.sh,resources=databaserequests,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=crd.lagoon.sh,resources=databaserequests/status,verbs=get;update;patch
@@ -165,18 +174,16 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// check if the database request is already created and the secret and service exist
 	var dbInfo dbInfo
 	switch databaseRequest.Spec.Type {
-	case "mysql":
+	case mysqlType:
 		logger.Info("Get MySQL database information")
 		var err error
 		dbInfo, err = r.mysqlInfo(ctx, databaseRequest)
 		if err != nil {
 			return r.handleError(ctx, databaseRequest, "mysql-info", err)
 		}
-	case "mariadb":
-		logger.Info("Get MariaDB database information")
-	case "postgres":
+	case postgresType:
 		logger.Info("Get PostgreSQL database information")
-	case "mongodb":
+	case mongodbType:
 		logger.Info("Get MongoDB database information")
 	default:
 		logger.Error(ErrInvalidDatabaseType, "Unsupported database type", "type", databaseRequest.Spec.Type)
@@ -361,7 +368,7 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 	logger := log.FromContext(ctx)
 	if databaseRequest.Spec.DropDatabaseOnDelete {
 		switch databaseRequest.Spec.Type {
-		case "mysql":
+		case mysqlType:
 			// handle mysql deletion
 			// Note at the moment we only have one "primary" connection per database request
 			// Implementing additional users would require to extend the logic here
@@ -369,13 +376,10 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 			if err := r.mysqlDeletion(ctx, databaseRequest); err != nil {
 				return r.handleError(ctx, databaseRequest, "mysql-drop", err)
 			}
-		case "mariadb":
-			// handle mariadb deletion
-			logger.Info("Dropping MariaDB database")
-		case "postgres":
+		case postgresType:
 			// handle postgres deletion
 			logger.Info("Dropping PostgreSQL database")
-		case "mongodb":
+		case mongodbType:
 			// handle mongodb deletion
 			logger.Info("Dropping MongoDB database")
 		default:
@@ -418,7 +422,7 @@ func (r *DatabaseRequestReconciler) createDatabase(
 	ctx context.Context, databaseRequest *crdv1alpha1.DatabaseRequest) error {
 	logger := log.FromContext(ctx)
 	switch databaseRequest.Spec.Type {
-	case "mysql":
+	case mysqlType:
 		// handle mysql creation
 		// Note at the moment we only have one "primary" connection per database request
 		// Implementing additional users would require to extend the logic here
@@ -432,13 +436,10 @@ func (r *DatabaseRequestReconciler) createDatabase(
 		if databaseRequest.Status.DatabaseInfo == nil {
 			return fmt.Errorf("mysql db creation failed due to missing database info")
 		}
-	case "mariadb":
-		// handle mariadb creation
-		logger.Info("Creating MariaDB database")
-	case "postgres":
+	case postgresType:
 		// handle postgres creation
 		logger.Info("Creating PostgreSQL database")
-	case "mongodb":
+	case mongodbType:
 		// handle mongodb creation
 		logger.Info("Creating MongoDB database")
 	default:
