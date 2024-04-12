@@ -42,7 +42,7 @@ spec:
               additionalUsers:
                 description: AdditionalUsers defines the additional users to be created
                 items:
-                  description: AdditionalUser defines the additional users to be created
+                  description: AdditionalUser defines the additional user to be created
                   properties:
                     name:
                       description: |-

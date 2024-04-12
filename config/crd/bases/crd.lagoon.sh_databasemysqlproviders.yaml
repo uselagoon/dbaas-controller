@@ -191,6 +191,8 @@ spec:
                 description: MySQLConnectionStatus provides the status of the MySQL
                   database
                 items:
+                  description: MySQLConnectionStatus defines the status of a MySQL
+                    database connection
                   properties:
                     enabled:
                       description: Enabled is a flag to indicate whether a MySQL database
