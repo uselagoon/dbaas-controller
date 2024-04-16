@@ -12,7 +12,7 @@ WIP - Work in Progress
 There is still a lot of work to be done on this project. The current status is that the controller is able to provision and deprovision MySQL databases. But there is still a lot of work to be done to make it production ready.
 
 - [x] Setup e2e tests
-- [x] Provision MySQL databases (basic) - no support for additional users, seeding, etc.
+- [x] Provision MySQL databases (basic + seeding) - no support for additional users etc.
 - [x] Deprovision MySQL databases
 - [ ] Provision PostgreSQL databases
 - [ ] Deprovision PostgreSQL databases
@@ -53,6 +53,7 @@ Key Features:
 - Utilizes native Kubernetes secret resources for storing database credentials and connection details.
 - Pooling and Disabling Providers: Supports adding new providers to a pool and marking providers as disabled or unable to deprovision.
 - Migration Support: Offers mechanisms to migrate consumers between providers seamlessly.
+- Able to reusing existing databases by using a seed secret to populate the database with data.
 
 ## Custom Resource Definitions
 

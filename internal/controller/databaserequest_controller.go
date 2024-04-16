@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -148,53 +149,61 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	if databaseRequest.Spec.DatabaseConnectionReference == nil {
-		if err := r.createDatabase(ctx, databaseRequest); err != nil {
-			return r.handleError(ctx, databaseRequest, "create-database", err)
-		}
-		if databaseRequest.Spec.DatabaseConnectionReference == nil {
-			return r.handleError(
-				ctx, databaseRequest, "missing-connection-reference", errors.New("missing database connection reference"))
-		}
-	}
-
-	if databaseRequest.Status.ObservedDatabaseConnectionReference != databaseRequest.Spec.DatabaseConnectionReference {
-		// update the database connection reference
-		// FIXME: maybe this needs some additional checks
-		// For example implement an update logic by checking:
-		// - the connection works to the potentially new database
-		// - might need to create user and password for the new connection?
-		// - updating the secret accordingly
-		// - anything else needed?
-		databaseRequest.Status.ObservedDatabaseConnectionReference = databaseRequest.Spec.DatabaseConnectionReference
-	}
-
-	// Note at the moment we only have one "primary" connection per database request
-	// Implementing additional users would require to extend the logic here
-	// check if the database request is already created and the secret and service exist
-	var dbInfo dbInfo
-	switch databaseRequest.Spec.Type {
-	case mysqlType:
-		logger.Info("Get MySQL database information")
+	var dbInfo *dbInfo
+	if databaseRequest.Spec.Seed != nil {
 		var err error
-		dbInfo, err = r.mysqlInfo(ctx, databaseRequest)
+		dbInfo, err = r.seedDatabase(ctx, databaseRequest)
 		if err != nil {
-			return r.handleError(ctx, databaseRequest, "mysql-info", err)
+			return r.handleError(ctx, databaseRequest, "seed-database", err)
 		}
-	case postgresType:
-		logger.Info("Get PostgreSQL database information")
-	case mongodbType:
-		logger.Info("Get MongoDB database information")
-	default:
-		logger.Error(ErrInvalidDatabaseType, "Unsupported database type", "type", databaseRequest.Spec.Type)
+		if err := r.mysqlTestConnection(ctx, dbInfo); err != nil {
+			return r.handleError(ctx, databaseRequest, "seed-database-connection", err)
+		}
+	} else {
+		if databaseRequest.Spec.DatabaseConnectionReference == nil {
+			if err := r.createDatabase(ctx, databaseRequest); err != nil {
+				return r.handleError(ctx, databaseRequest, "create-database", err)
+			}
+			if databaseRequest.Spec.DatabaseConnectionReference == nil {
+				return r.handleError(
+					ctx, databaseRequest, "missing-connection-reference", errors.New("missing database connection reference"))
+			}
+		}
+
+		if databaseRequest.Status.ObservedDatabaseConnectionReference != databaseRequest.Spec.DatabaseConnectionReference {
+			logger.Info("Database connection reference changed")
+			// This means that the database provider has changed and we need to test the connection.
+			// We will also update the service and secret BUT we do not create a new database, user or password.
+			//
+			databaseRequest.Status.ObservedDatabaseConnectionReference = databaseRequest.Spec.DatabaseConnectionReference
+		}
+
+		// Note at the moment we only have one "primary" connection per database request
+		// Implementing additional users would require to extend the logic here
+		// check if the database request is already created and the secret and service exist
+		switch databaseRequest.Spec.Type {
+		case mysqlType:
+			logger.Info("Get MySQL database information")
+			var err error
+			dbInfo, err = r.mysqlInfo(ctx, databaseRequest)
+			if err != nil {
+				return r.handleError(ctx, databaseRequest, "mysql-info", err)
+			}
+		case postgresType:
+			logger.Info("Get PostgreSQL database information")
+		case mongodbType:
+			logger.Info("Get MongoDB database information")
+		default:
+			logger.Error(ErrInvalidDatabaseType, "Unsupported database type", "type", databaseRequest.Spec.Type)
+		}
 	}
 
-	serviceChanged, err := r.handleService(ctx, &dbInfo, databaseRequest)
+	serviceChanged, err := r.handleService(ctx, dbInfo, databaseRequest)
 	if err != nil {
 		return r.handleError(ctx, databaseRequest, "handle-service", err)
 	}
 
-	secretChanged, err := r.handleSecret(ctx, &dbInfo, databaseRequest)
+	secretChanged, err := r.handleSecret(ctx, dbInfo, databaseRequest)
 	if err != nil {
 		return r.handleError(ctx, databaseRequest, "handle-secret", err)
 	}
@@ -317,6 +326,7 @@ func (r *DatabaseRequestReconciler) handleService(
 	return false, nil
 }
 
+// handleSecret creates or updates the secret for the database request
 func (r *DatabaseRequestReconciler) handleSecret(
 	ctx context.Context, dbInfo *dbInfo, databaseRequest *crdv1alpha1.DatabaseRequest) (bool, error) {
 	// Note at the moment we only have one "primary" connection per database request
@@ -362,6 +372,7 @@ func (r *DatabaseRequestReconciler) handleSecret(
 	return false, nil
 }
 
+// deleteDatabase deletes the database based on the database request
 func (r *DatabaseRequestReconciler) deleteDatabase(
 	ctx context.Context, databaseRequest *crdv1alpha1.DatabaseRequest) (ctrl.Result, error) {
 	// handle deletion logic
@@ -418,6 +429,7 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 	return ctrl.Result{}, nil
 }
 
+// createDatabase creates the database based on the database request
 func (r *DatabaseRequestReconciler) createDatabase(
 	ctx context.Context, databaseRequest *crdv1alpha1.DatabaseRequest) error {
 	logger := log.FromContext(ctx)
@@ -449,6 +461,21 @@ func (r *DatabaseRequestReconciler) createDatabase(
 	}
 
 	return nil
+}
+
+// seedDatabase returns the database information from the seed secret
+func (r *DatabaseRequestReconciler) seedDatabase(
+	ctx context.Context,
+	databaseRequest *crdv1alpha1.DatabaseRequest,
+) (*dbInfo, error) {
+	seed := &v1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      databaseRequest.Spec.Seed.Name,
+		Namespace: databaseRequest.Spec.Seed.Namespace,
+	}, seed); err != nil {
+		return nil, fmt.Errorf("failed to get seed secret %s: %w", databaseRequest.Spec.Seed.Name, err)
+	}
+	return dbInfoFromSeed(seed)
 }
 
 // promLabels returns the prometheus labels for the database request
@@ -506,6 +533,7 @@ type dbInfo struct {
 	port     int
 }
 
+// getSecretData returns the secret data for the database
 func (m *dbInfo) getSecretData(name, serviceName string) map[string][]byte {
 	name = strings.ToUpper(strings.Replace(name, "-", "_", -1))
 	return map[string][]byte{
@@ -515,6 +543,47 @@ func (m *dbInfo) getSecretData(name, serviceName string) map[string][]byte {
 		fmt.Sprintf("%s_HOST", strings.ToUpper(name)):     []byte(serviceName),
 		fmt.Sprintf("%s_PORT", strings.ToUpper(name)):     []byte(fmt.Sprintf("%d", m.port)),
 	}
+}
+
+// dbInfoFromSeed returns a dbInfo struct from the seed secret
+func dbInfoFromSeed(secret *v1.Secret) (*dbInfo, error) {
+	// check if the secret has all the required keys
+	info := &dbInfo{}
+	if val, ok := secret.Data["database"]; !ok {
+		return nil, errors.New("missing database key in seed secret")
+	} else {
+		info.database = string(val)
+	}
+
+	if val, ok := secret.Data["hostname"]; !ok {
+		return nil, errors.New("missing hostname key in seed secret")
+	} else {
+		info.hostName = string(val)
+	}
+
+	if val, ok := secret.Data["username"]; !ok {
+		return nil, errors.New("missing username key in seed secret")
+	} else {
+		info.userName = string(val)
+	}
+
+	if val, ok := secret.Data["password"]; !ok {
+		return nil, errors.New("missing password key in seed secret")
+	} else {
+		info.password = string(val)
+	}
+
+	if val, ok := secret.Data["port"]; !ok {
+		return nil, errors.New("missing port key in seed secret")
+	} else {
+		port, err := strconv.Atoi(string(val))
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert port to int: %w", err)
+		}
+		info.port = port
+	}
+
+	return info, nil
 }
 
 // mysqlOperation performs the MySQL operations create and drop
@@ -744,14 +813,32 @@ func (r *DatabaseRequestReconciler) mysqlDeletion(
 func (r *DatabaseRequestReconciler) mysqlInfo(
 	ctx context.Context,
 	databaseRequest *crdv1alpha1.DatabaseRequest,
-) (dbInfo, error) {
+) (*dbInfo, error) {
 	log.FromContext(ctx).Info("Retrieving MySQL database information")
 
-	dbInfo := dbInfo{}
-	if err := r.mysqlOperation(ctx, info, databaseRequest, &dbInfo); err != nil {
-		return dbInfo, fmt.Errorf("mysql db info failed: %w", err)
+	dbInfo := &dbInfo{}
+	if err := r.mysqlOperation(ctx, info, databaseRequest, dbInfo); err != nil {
+		return nil, fmt.Errorf("mysql db info failed: %w", err)
 	}
 	return dbInfo, nil
+}
+
+// mysqlTestConnection tests the MySQL connection
+func (r *DatabaseRequestReconciler) mysqlTestConnection(
+	ctx context.Context,
+	dbi *dbInfo,
+) error {
+	log.FromContext(ctx).Info("Testing MySQL connection")
+	conn := mySQLConn{
+		hostname: dbi.hostName,
+		username: dbi.userName,
+		password: dbi.password,
+		port:     dbi.port,
+	}
+	if err := r.MySQLClient.Ping(ctx, conn.getDSN()); err != nil {
+		return fmt.Errorf("mysql test connection failed: %w", err)
+	}
+	return nil
 }
 
 // lock is a simple lock implementation to avoid creating the same database in parallel

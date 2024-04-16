@@ -97,6 +97,9 @@ var _ = Describe("controller", Ordered, func() {
 		cmd = exec.Command(
 			"kubectl", "delete", "secret", "-n", "default", "-l", "app.kubernetes.io/instance=databaserequest-sample")
 		_, _ = utils.Run(cmd)
+		cmd = exec.Command(
+			"kubectl", "delete", "secret", "-n", "default", "seed-mysql-secret")
+		_, _ = utils.Run(cmd)
 	})
 
 	Context("Operator", func() {
@@ -255,7 +258,15 @@ var _ = Describe("controller", Ordered, func() {
 			secretNames = utils.GetNonEmptyLines(string(secretOutput))
 			ExpectWithOffset(1, secretNames).Should(HaveLen(1))
 
-			// TODO(marco): maybe add a test connecting to the mysql database...
+			By("creating seed secret for the DatabaseRequest resource")
+			cmd = exec.Command("kubectl", "apply", "-f", "test/e2e/testdata/seed-secret.yaml")
+			_, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+			By("creating mysql pod to create seed credentials")
+			cmd = exec.Command("kubectl", "apply", "-f", "test/e2e/testdata/mysql-client-pod.yaml")
+			_, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
 			// uncomment to debug ...
 			//time.Sleep(15 * time.Minute)
