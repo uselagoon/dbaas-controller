@@ -32,10 +32,40 @@ const (
 
 	certmanagerVersion = "v1.5.3"
 	certmanagerURLTmpl = "https://github.com/jetstack/cert-manager/releases/download/%s/cert-manager.yaml"
+
+	mysqlYaml = "test/e2e/testdata/mysql.yaml"
 )
 
 func warnError(err error) {
 	fmt.Fprintf(GinkgoWriter, "warning: %v\n", err)
+}
+
+// InstallMySQL installs a MySQL pod to be used for testing.
+func InstallMySQL() error {
+	dir, err := GetProjectDir()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("kubectl", "apply", "-f", mysqlYaml)
+	cmd.Dir = dir
+	fmt.Fprintf(GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
+	_, err = Run(cmd)
+	// Note that we don't wait for the pod to be ready here. This is a good test for the controller
+	// to see if it can handle mysql server not being ready.
+	return err
+}
+
+// UninstallMySQLPod uninstalls the MySQL pod.
+func UninstallMySQLPod() {
+	dir, err := GetProjectDir()
+	if err != nil {
+		warnError(err)
+	}
+	cmd := exec.Command("kubectl", "delete", "-f", mysqlYaml)
+	cmd.Dir = dir
+	if _, err := Run(cmd); err != nil {
+		warnError(err)
+	}
 }
 
 // InstallPrometheusOperator installs the prometheus Operator to be used to export the enabled metrics.

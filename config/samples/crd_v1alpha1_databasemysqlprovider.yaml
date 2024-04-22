@@ -1,0 +1,21 @@
+apiVersion: crd.lagoon.sh/v1alpha1
+kind: DatabaseMySQLProvider
+metadata:
+  labels:
+    app.kubernetes.io/name: databasemysqlprovider
+    app.kubernetes.io/instance: databasemysqlprovider-sample
+    app.kubernetes.io/part-of: dbaas-controller
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: dbaas-controller
+  name: databasemysqlprovider-sample
+spec:
+  scope: development
+  mysqlConnections:
+    - name: primary-test-mysql-connection
+      hostname: mysql-service.mysql
+      passwordSecretRef:
+        name: mysql-secret
+        namespace: mysql
+      port: 3306
+      username: root
+      enabled: true

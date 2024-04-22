@@ -7,4 +7,22 @@ layout:
 - go.kubebuilder.io/v4
 projectName: dbaas-controller
 repo: github.com/uselagoon/dbaas-controller
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: lagoon.sh
+  group: crd
+  kind: DatabaseRequest
+  path: github.com/uselagoon/dbaas-controller/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+  controller: true
+  domain: lagoon.sh
+  group: crd
+  kind: DatabaseMySQLProvider
+  path: github.com/uselagoon/dbaas-controller/api/v1alpha1
+  version: v1alpha1
 version: "3"

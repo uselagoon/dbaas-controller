@@ -1,0 +1,27 @@
+# permissions for end users to view databasemysqlproviders.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: databasemysqlprovider-viewer-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: dbaas-controller
+    app.kubernetes.io/part-of: dbaas-controller
+    app.kubernetes.io/managed-by: kustomize
+  name: databasemysqlprovider-viewer-role
+rules:
+- apiGroups:
+  - crd.lagoon.sh
+  resources:
+  - databasemysqlproviders
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - crd.lagoon.sh
+  resources:
+  - databasemysqlproviders/status
+  verbs:
+  - get

@@ -1,0 +1,14 @@
+apiVersion: crd.lagoon.sh/v1alpha1
+kind: DatabaseRequest
+metadata:
+  labels:
+    app.kubernetes.io/name: databaserequest
+    app.kubernetes.io/instance: databaserequest-sample
+    app.kubernetes.io/part-of: dbaas-controller
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: dbaas-controller
+  name: databaserequest-sample
+spec:
+  name: first-mysql-db
+  scope: development
+  type: mysql
