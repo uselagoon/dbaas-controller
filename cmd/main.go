@@ -18,7 +18,6 @@ package main
 
 import (
 	"crypto/tls"
-	"database/sql"
 	"flag"
 	"os"
 
@@ -125,10 +124,6 @@ func main() {
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
-	}
-
-	mysqlClient := &mysql.MySQLImpl{
-		ConnectionCache: make(map[string]*sql.DB),
 	}
 
 	relDBClient := database.New()
