@@ -1,0 +1,31 @@
+name: DBaaS controller tests
+
+on: pull_request
+
+jobs:
+  test-suite:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: "0"
+
+    - name: Configure kind network
+      run: |
+        docker network create kind
+
+    - name: Create kind cluster
+      uses: helm/kind-action@v1.9.0
+      with:
+        version: v0.22.0
+        node_image: kindest/node:v1.28.7@sha256:9bc6c451a289cf96ad0bbaf33d416901de6fd632415b076ab05f5fa7e4f65c58
+        kubectl_version: v1.28.7
+        cluster_name: kind
+        config: kind-config.yaml
+
+    - name: Run github/test-e2e
+      run: make github/test-e2e
