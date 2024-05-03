@@ -21,21 +21,21 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// MySQLConnection defines the connection to a MySQL database
-type MySQLConnection struct {
-	// Name is the name of the MySQL database connection
+// Connection defines the connection to a relational database like MySQL or PostgreSQL
+type Connection struct {
+	// Name is the name of the relational database like MySQL or PostgreSQL connection
 	// it is used to identify the connection. Please use a unique name
 	// for each connection. This field will be used in the DatabaseRequest
-	// to reference the connection. The databasemysqlprovider controller will
+	// to reference the connection. The relationaldatabaseprovider controller will
 	// error if the name is not unique.
 	Name string `json:"name"`
 
 	//+kubebuilder:required
-	// Hostname is the hostname of the MySQL database
+	// Hostname is the hostname of the relational database
 	Hostname string `json:"hostname"`
 
 	//+kubebuilder:optional
-	// ReplicaHostnames is the list of hostnames of the MySQL database replicas
+	// ReplicaHostnames is the list of hostnames of the relational database replicas
 	ReplicaHostnames []string `json:"replicaHostnames,omitempty"`
 
 	//+kubebuilder:required
@@ -46,21 +46,28 @@ type MySQLConnection struct {
 	//+kubebuilder:validation:Required
 	//+kubebuilder:validation:Minimum=1
 	//+kubebuilder:validation:Maximum=65535
-	// Port is the port of the MySQL database
+	// Port is the port of the relational database
 	Port int `json:"port"`
 
 	//+kubebuilder:required
-	// Username is the username of the MySQL database
+	// Username is the username of the relational database
 	Username string `json:"username"`
 
 	//+kubebuilder:required
 	//+kubebuilder:default:=true
-	// Enabled is a flag to enable or disable the MySQL database
+	// Enabled is a flag to enable or disable the relational database
 	Enabled bool `json:"enabled"`
 }
 
-// DatabaseMySQLProviderSpec defines the desired state of DatabaseMySQLProvider
-type DatabaseMySQLProviderSpec struct {
+// RelationalDatabaseProviderSpec defines the desired state of RelationalDatabaseProvider
+type RelationalDatabaseProviderSpec struct {
+	//+kubebuilder:required
+	//+kubebuilder:validation:Required
+	//+kubebuilder:validation:Enum=mysql;postgresql
+	// Kind is the kind of the relational database provider
+	// it can be either "mysql" or "postgresql"
+	Kind string `json:"kind"`
+
 	//+kubebuilder:required
 	//+kubebuilder:validation:Required
 	//+kubebuilder:validation:Enum=production;development;custom
@@ -70,27 +77,27 @@ type DatabaseMySQLProviderSpec struct {
 	Scope string `json:"scope"`
 
 	//+kubebuilder:validation:MinItems=1
-	// MySQLConnections defines the connection to a MySQL database
-	MySQLConnections []MySQLConnection `json:"mysqlConnections"`
+	// Connections defines the connection to a relational database
+	Connections []Connection `json:"connections"`
 }
 
-// MySQLConnectionStatus defines the status of a MySQL database connection
-type MySQLConnectionStatus struct {
+// ConnectionStatus defines the status of a relational database connection
+type ConnectionStatus struct {
 	//+kubebuilder:required
-	// Name is the name of the MySQL database connection
+	// Name is the name of the relational database connection
 	// it is used to identify the connection. Please use a unique name
 	// for each connection. This field will be used in the DatabaseRequest
-	// to reference the connection. The databasemysqlprovider controller will
+	// to reference the connection. The relationaldatabaseprovider controller will
 	// error if the name is not unique.
 	Name string `json:"name"`
 
 	//+kubebuilder:required
-	// Hostname is the hostname of the MySQL database
+	// Hostname is the hostname of the relational database
 	Hostname string `json:"hostname"`
 
 	//+kubebuilder:required
-	// MySQLVersion is the version of the MySQL database
-	MySQLVersion string `json:"mysqlVersion"`
+	// DatabaseVersion is the version of the relational database
+	DatabaseVersion string `json:"databaseVersion"`
 
 	//+kubebuilder:required
 	//+kubebuilder:validation:Required
@@ -100,17 +107,17 @@ type MySQLConnectionStatus struct {
 	//+kubebuilder:required
 	//+kubebuilder:validation:Required
 	//+kubebuilder:validation:Enum=available;unavailable
-	// Status is the status of the MySQL database
+	// Status is the status of the relational database
 	Status string `json:"status"`
 }
 
-// DatabaseMySQLProviderStatus defines the observed state of DatabaseMySQLProvider
-type DatabaseMySQLProviderStatus struct {
+// RelationalDatabaseProviderStatus defines the observed state of RelationalDatabaseProvider
+type RelationalDatabaseProviderStatus struct {
 	// Conditions defines the status conditions
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
-	// MySQLConnectionStatus provides the status of the MySQL database
-	MySQLConnectionStatus []MySQLConnectionStatus `json:"mysqlConnectionStatus,omitempty"`
+	// ConnectionStatus provides the status of the relational database
+	ConnectionStatus []ConnectionStatus `json:"connectionStatus,omitempty"` // nolint:lll
 
 	// ObservedGeneration is the last observed generation
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
@@ -120,24 +127,24 @@ type DatabaseMySQLProviderStatus struct {
 //+kubebuilder:subresource:status
 //+kubebuilder:resource:scope=Cluster
 
-// DatabaseMySQLProvider is the Schema for the databasemysqlproviders API
-type DatabaseMySQLProvider struct {
+// RelationalDatabaseProvider is the Schema for the relationaldatabaseprovider API
+type RelationalDatabaseProvider struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   DatabaseMySQLProviderSpec   `json:"spec,omitempty"`
-	Status DatabaseMySQLProviderStatus `json:"status,omitempty"`
+	Spec   RelationalDatabaseProviderSpec   `json:"spec,omitempty"`
+	Status RelationalDatabaseProviderStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 
-// DatabaseMySQLProviderList contains a list of DatabaseMySQLProvider
-type DatabaseMySQLProviderList struct {
+// RelationalDatabaseProviderList contains a list of RelationalDatabaseProvider
+type RelationalDatabaseProviderList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []DatabaseMySQLProvider `json:"items"`
+	Items           []RelationalDatabaseProvider `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&DatabaseMySQLProvider{}, &DatabaseMySQLProviderList{})
+	SchemeBuilder.Register(&RelationalDatabaseProvider{}, &RelationalDatabaseProviderList{})
 }

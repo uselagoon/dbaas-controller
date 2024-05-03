@@ -52,20 +52,21 @@ var _ = Describe("controller", Ordered, func() {
 		By("uninstalling the cert-manager bundle")
 		utils.UninstallCertManager()
 
-		By("removing the DatabaseMySQLProvider resource")
+		By("removing the RelationalDatabaseProvider resource")
 		// we enforce the deletion by removing the finalizer
 		cmd := exec.Command(
 			"kubectl",
 			"patch",
-			"databasemysqlprovider",
-			"databasemysqlprovider-sample",
+			"relationaldatabaseprovider",
+			"relationaldatabaseprovider-mysql-sample",
 			"-p",
 			`{"metadata":{"finalizers":[]}}`,
 			"--type=merge",
 		)
 		_, _ = utils.Run(cmd)
 
-		cmd = exec.Command("kubectl", "delete", "--force", "databasemysqlprovider", "databasemysqlprovider-sample")
+		cmd = exec.Command(
+			"kubectl", "delete", "--force", "relationaldatabaseprovider", "relationaldatabaseprovider-mysql-sample")
 		_, _ = utils.Run(cmd)
 
 		By("removing the DatabaseRequest resource")
@@ -74,13 +75,13 @@ var _ = Describe("controller", Ordered, func() {
 			"kubectl",
 			"patch",
 			"databaserequest",
-			"databaserequest-sample",
+			"databaserequest-mysql-sample",
 			"-p",
 			`{"metadata":{"finalizers":[]}}`,
 			"--type=merge",
 		)
 		_, _ = utils.Run(cmd)
-		cmd = exec.Command("kubectl", "delete", "--force", "databaserequest", "databaserequest-sample")
+		cmd = exec.Command("kubectl", "delete", "--force", "databaserequest", "databaserequest-mysql-sample")
 		_, _ = utils.Run(cmd)
 
 		By("removing manager namespace")
@@ -92,10 +93,10 @@ var _ = Describe("controller", Ordered, func() {
 
 		By("removing service and secret")
 		cmd = exec.Command(
-			"kubectl", "delete", "service", "-n", "default", "-l", "app.kubernetes.io/instance=databaserequest-sample")
+			"kubectl", "delete", "service", "-n", "default", "-l", "app.kubernetes.io/instance=databaserequest-mysql-sample")
 		_, _ = utils.Run(cmd)
 		cmd = exec.Command(
-			"kubectl", "delete", "secret", "-n", "default", "-l", "app.kubernetes.io/instance=databaserequest-sample")
+			"kubectl", "delete", "secret", "-n", "default", "-l", "app.kubernetes.io/instance=databaserequest-mysql-sample")
 		_, _ = utils.Run(cmd)
 	})
 
@@ -162,25 +163,25 @@ var _ = Describe("controller", Ordered, func() {
 			}
 			EventuallyWithOffset(1, verifyControllerUp, time.Minute, time.Second).Should(Succeed())
 
-			By("creating a DatabaseMySQLProvider resource")
-			cmd = exec.Command("kubectl", "apply", "-f", "config/samples/crd_v1alpha1_databasemysqlprovider.yaml")
+			By("creating a RelationalDatabaseProvider resource")
+			cmd = exec.Command("kubectl", "apply", "-f", "config/samples/crd_v1alpha1_relationaldatabaseprovider_mysql.yaml")
 			_, err = utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
-			By("validating that the DatabaseMySQLProvider resource is created")
+			By("validating that the RelationalDatabaseProvider resource is created")
 			cmd = exec.Command(
 				"kubectl",
 				"wait",
 				"--for=condition=Ready",
-				"databasemysqlprovider",
-				"databasemysqlprovider-sample",
+				"relationaldatabaseprovider",
+				"relationaldatabaseprovider-mysql-sample",
 				"--timeout=60s",
 			)
 			_, err = utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
 			By("creating a DatabaseRequest resource")
-			cmd = exec.Command("kubectl", "apply", "-f", "config/samples/crd_v1alpha1_databaserequest.yaml")
+			cmd = exec.Command("kubectl", "apply", "-f", "config/samples/crd_v1alpha1_databaserequest_mysql.yaml")
 			_, err = utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
@@ -190,7 +191,7 @@ var _ = Describe("controller", Ordered, func() {
 				"wait",
 				"--for=condition=Ready",
 				"databaserequest",
-				"databaserequest-sample",
+				"databaserequest-mysql-sample",
 				"--timeout=60s",
 			)
 			_, err = utils.Run(cmd)
@@ -203,7 +204,7 @@ var _ = Describe("controller", Ordered, func() {
 				"get",
 				"service",
 				"-n", "default",
-				"-l", "app.kubernetes.io/instance=databaserequest-sample",
+				"-l", "app.kubernetes.io/instance=databaserequest-mysql-sample",
 			)
 			serviceOutput, err := utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
@@ -217,7 +218,7 @@ var _ = Describe("controller", Ordered, func() {
 				"get",
 				"secret",
 				"-n", "default",
-				"-l", "app.kubernetes.io/instance=databaserequest-sample",
+				"-l", "app.kubernetes.io/instance=databaserequest-mysql-sample",
 			)
 			secretOutput, err := utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
@@ -225,7 +226,7 @@ var _ = Describe("controller", Ordered, func() {
 			ExpectWithOffset(1, secretNames).Should(HaveLen(2))
 
 			By("deleting the DatabaseRequest resource the database is getting deprovisioned")
-			cmd = exec.Command("kubectl", "delete", "databaserequest", "databaserequest-sample")
+			cmd = exec.Command("kubectl", "delete", "databaserequest", "databaserequest-mysql-sample")
 			_, err = utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
@@ -235,7 +236,7 @@ var _ = Describe("controller", Ordered, func() {
 				"get",
 				"service",
 				"-n", "default",
-				"-l", "app.kubernetes.io/instance=databaserequest-sample",
+				"-l", "app.kubernetes.io/instance=databaserequest-mysql-sample",
 			)
 			serviceOutput, err = utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
@@ -248,7 +249,7 @@ var _ = Describe("controller", Ordered, func() {
 				"get",
 				"secret",
 				"-n", "default",
-				"-l", "app.kubernetes.io/instance=databaserequest-sample",
+				"-l", "app.kubernetes.io/instance=databaserequest-mysql-sample",
 			)
 			secretOutput, err = utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mysql-init-pod
+  namespace: mysql
+spec:
+  restartPolicy: Never
+  containers:
+  - name: mysql-client
+    image: mysql:8 # change to mysql:5.7 if you want to test with MySQL 5.7 but remember
+                   # that the MySQL 5.7 image is is not multi-arch and will not work on ARM64
+                   # out of the box
+    command: ["sh", "-c"]
+    args:
+    - |
+      mysql -h mysql-service.mysql -uroot -pe2e-test-password -e "CREATE DATABASE IF NOT EXISTS seed-database;"

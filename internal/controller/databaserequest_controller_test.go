@@ -32,7 +32,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	crdv1alpha1 "github.com/uselagoon/dbaas-controller/api/v1alpha1"
-	"github.com/uselagoon/dbaas-controller/internal/database/mysql"
+	"github.com/uselagoon/dbaas-controller/internal/database"
 )
 
 var _ = Describe("DatabaseRequest Controller", func() {
@@ -45,15 +45,15 @@ var _ = Describe("DatabaseRequest Controller", func() {
 		ctx := context.Background()
 
 		databaserequest := &crdv1alpha1.DatabaseRequest{}
-		databaseMysqlProvider := &crdv1alpha1.DatabaseMySQLProvider{}
-		databaseMysqlProviderSecret := &v1.Secret{}
+		relationalDatabaseProvider := &crdv1alpha1.RelationalDatabaseProvider{}
+		relationalDatabaseProviderSecret := &v1.Secret{}
 
 		BeforeEach(func() {
-			By("creating the custom resource for the Kind DatabaseMySQLProvider")
+			By("creating the custom resource for the Kind RelationalDatabaseProvider")
 			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      dbMySQLProviderSecretResource,
 				Namespace: "default",
-			}, databaseMysqlProviderSecret)
+			}, relationalDatabaseProviderSecret)
 			if err != nil && errors.IsNotFound(err) {
 				secret := &v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
@@ -68,15 +68,16 @@ var _ = Describe("DatabaseRequest Controller", func() {
 			}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name: dbMySQLProviderResource,
-			}, databaseMysqlProvider)
+			}, relationalDatabaseProvider)
 			if err != nil && errors.IsNotFound(err) {
-				resource := &crdv1alpha1.DatabaseMySQLProvider{
+				resource := &crdv1alpha1.RelationalDatabaseProvider{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: dbMySQLProviderResource,
 					},
-					Spec: crdv1alpha1.DatabaseMySQLProviderSpec{
+					Spec: crdv1alpha1.RelationalDatabaseProviderSpec{
+						Kind:  "mysql",
 						Scope: "development",
-						MySQLConnections: []crdv1alpha1.MySQLConnection{
+						Connections: []crdv1alpha1.Connection{
 							{
 								Name:     "test-connection",
 								Hostname: "test-hostname",
@@ -117,22 +118,22 @@ var _ = Describe("DatabaseRequest Controller", func() {
 		})
 
 		AfterEach(func() {
-			By("Cleanup the specific resource instance DatabaseMySQLProvider")
-			databaseMysqlProvider = &crdv1alpha1.DatabaseMySQLProvider{}
+			By("Cleanup the specific resource instance RelationalDatabaseProvider")
+			relationalDatabaseProvider = &crdv1alpha1.RelationalDatabaseProvider{}
 			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name: dbMySQLProviderResource,
-			}, databaseMysqlProvider)
+			}, relationalDatabaseProvider)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(k8sClient.Delete(ctx, databaseMysqlProvider)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, relationalDatabaseProvider)).To(Succeed())
 
 			By("Cleanup the specific resource instance Secret")
-			databaseMysqlProviderSecret = &v1.Secret{}
+			relationalDatabaseProviderSecret = &v1.Secret{}
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      dbMySQLProviderSecretResource,
 				Namespace: "default",
-			}, databaseMysqlProviderSecret)
+			}, relationalDatabaseProviderSecret)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(k8sClient.Delete(ctx, databaseMysqlProviderSecret)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, relationalDatabaseProviderSecret)).To(Succeed())
 
 			By("Cleanup the specific resource instance DatabaseRequest")
 			databaserequest := &crdv1alpha1.DatabaseRequest{}
@@ -148,10 +149,10 @@ var _ = Describe("DatabaseRequest Controller", func() {
 			By("Reconciling the created resource")
 			fakeRecoder := record.NewFakeRecorder(100)
 			controllerReconciler := &DatabaseRequestReconciler{
-				Client:      k8sClient,
-				Scheme:      k8sClient.Scheme(),
-				Recorder:    fakeRecoder,
-				MySQLClient: &mysql.MySQLMock{},
+				Client:                   k8sClient,
+				Scheme:                   k8sClient.Scheme(),
+				Recorder:                 fakeRecoder,
+				RelationalDatabaseClient: &database.RelationalDatabaseMock{},
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
