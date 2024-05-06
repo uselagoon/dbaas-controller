@@ -46,7 +46,7 @@ var _ = Describe("RelationalDatabaseProvider Controller", func() {
 		relationaldatabaseprovider := &crdv1alpha1.RelationalDatabaseProvider{}
 
 		BeforeEach(func() {
-			By("creating the custom resource for the Kind RelationalDatabaseProvider")
+			By("creating the custom resource for the RelationalDatabaseProvider")
 			secret := &v1.Secret{}
 			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      "test-rel-db-provider-secret",
@@ -74,7 +74,7 @@ var _ = Describe("RelationalDatabaseProvider Controller", func() {
 						Namespace: "default",
 					},
 					Spec: crdv1alpha1.RelationalDatabaseProviderSpec{
-						Kind:  "mysql",
+						Type:  "mysql",
 						Scope: "custom",
 						Connections: []crdv1alpha1.Connection{
 							{

@@ -75,7 +75,7 @@ var _ = Describe("DatabaseRequest Controller", func() {
 						Name: dbMySQLProviderResource,
 					},
 					Spec: crdv1alpha1.RelationalDatabaseProviderSpec{
-						Kind:  "mysql",
+						Type:  "mysql",
 						Scope: "development",
 						Connections: []crdv1alpha1.Connection{
 							{

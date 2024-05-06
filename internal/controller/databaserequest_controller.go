@@ -574,7 +574,7 @@ func (r *DatabaseRequestReconciler) relationalDatabaseOperation(
 	}
 
 	conn := reldbConn{
-		kind:     databaseRequest.Spec.Type,
+		dbType:   databaseRequest.Spec.Type,
 		name:     connection.Name,
 		hostname: connection.Hostname,
 		username: connection.Username,
@@ -679,7 +679,7 @@ func (r *DatabaseRequestReconciler) findRelationalDatabaseProvider(
 	var provider *crdv1alpha1.RelationalDatabaseProvider
 	var connName string
 	for _, dbProvider := range dbProviders.Items {
-		if dbProvider.Spec.Scope == databaseRequest.Spec.Scope {
+		if dbProvider.Spec.Scope == databaseRequest.Spec.Scope && dbProvider.Spec.Type == databaseRequest.Spec.Type {
 			log.FromContext(ctx).Info("Found provider", "provider", dbProvider.Name)
 			for _, dbConnection := range dbProvider.Spec.Connections {
 				if dbConnection.Enabled {
@@ -700,7 +700,7 @@ func (r *DatabaseRequestReconciler) findRelationalDatabaseProvider(
 					}
 
 					conn := reldbConn{
-						kind:     databaseRequest.Spec.Type,
+						dbType:   databaseRequest.Spec.Type,
 						name:     dbConnection.Name,
 						hostname: dbConnection.Hostname,
 						username: dbConnection.Username,

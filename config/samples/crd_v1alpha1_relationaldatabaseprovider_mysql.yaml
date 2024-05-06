@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: relationaldatabaseprovider-mysql-sample
 spec:
-  kind: mysql
+  type: mysql
   scope: development
   connections:
     - name: primary-test-mysql-connection

@@ -7,6 +7,7 @@ import (
 	"math/rand"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -19,9 +20,9 @@ const (
 	maxPasswordLength = 24
 	// maxDatabaseNameLength MySQL and PostgreSQL database name must use valid characters and be at most 63 characters long
 	maxDatabaseNameLength = 63
-	// mysql is the kind for MySQL
+	// mysql is the type for MySQL
 	mysql = "mysql"
-	// postgres is the kind for PostgreSQL
+	// postgres is the type for PostgreSQL
 	postgres = "postgres"
 )
 
@@ -39,36 +40,36 @@ type RelationalDatabaseInfo struct {
 // Note that the implementation of this interface should be idempotent.
 type RelationalDatabaseInterface interface {
 	// GetConnection returns a connection to the relational database
-	GetConnection(ctx context.Context, dsn string, kind string) (*sql.DB, error)
+	GetConnection(ctx context.Context, dsn string, dbType string) (*sql.DB, error)
 
 	// Ping pings the relational database
-	Ping(ctx context.Context, dsn string, kind string) error
+	Ping(ctx context.Context, dsn string, dbType string) error
 
 	// Version returns the version of the relational database
-	Version(ctx context.Context, dsn string, kind string) (string, error)
+	Version(ctx context.Context, dsn string, dbType string) (string, error)
 
 	// Load of the database measured in MB of data and index size.
 	// Higher values indicate more data and indexes.
-	Load(ctx context.Context, dsn string, kind string) (int, error)
+	Load(ctx context.Context, dsn string, dbType string) (int, error)
 
 	// Initialize initializes the relational database
 	// This is used by the database {MySQL,PostgreSQL} provider to initialize the relational database.
 	// It does setup the dbass_controller database.
 	// This function is idempotent and can be called multiple times without side effects.
-	Initialize(ctx context.Context, dsn string, kind string) error
+	Initialize(ctx context.Context, dsn string, dbType string) error
 
 	// CreateDatabase creates a database in the relational database if it does not exist.
 	// It also creates a user and grants the user permissions on the database.
 	// This function is idempotent and can be called multiple times without side effects.
 	// returns the database name, username, and password
-	CreateDatabase(ctx context.Context, dsn, name, namespace, kind string) (RelationalDatabaseInfo, error)
+	CreateDatabase(ctx context.Context, dsn, name, namespace, dbType string) (RelationalDatabaseInfo, error)
 
 	// DropDatabase drops a database in the MySQL or PostgreSQL database if it exists.
 	// This function is idempotent and can be called multiple times without side effects.
-	DropDatabase(ctx context.Context, dsn, name, namespace, kind string) error
+	DropDatabase(ctx context.Context, dsn, name, namespace, dbType string) error
 
 	// GetDatabase returns the database name, username, and password for the given name and namespace.
-	GetDatabase(ctx context.Context, dsn, name, namespace, kind string) (RelationalDatabaseInfo, error)
+	GetDatabase(ctx context.Context, dsn, name, namespace, dbType string) (RelationalDatabaseInfo, error)
 }
 
 // RelationalDatabaseImpl is the implementation of the RelationalDatabaseInterface
@@ -87,46 +88,48 @@ func New() *RelationalDatabaseImpl {
 }
 
 // GetConnection returns a connection to the MySQL or PostgreSQL database
-func (ri *RelationalDatabaseImpl) GetConnection(ctx context.Context, dsn string, kind string) (*sql.DB, error) {
+func (ri *RelationalDatabaseImpl) GetConnection(ctx context.Context, dsn string, dbType string) (*sql.DB, error) {
 	if db, ok := ri.connectionCache[dsn]; ok {
 		return db, nil
 	}
-	db, err := sql.Open(kind, dsn)
+
+	log.FromContext(ctx).Info("Opening new database connection", "dbType", dbType)
+	db, err := sql.Open(dbType, dsn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open %s database: %w", kind, err)
+		return nil, fmt.Errorf("failed to open %s database: %w", dbType, err)
 	}
-	log.FromContext(ctx).Info("Opening %s database connection", "kind", kind)
+
 	ri.connectionCache[dsn] = db
 	return db, nil
 }
 
 // Ping pings the relational database
-func (ri *RelationalDatabaseImpl) Ping(ctx context.Context, dsn string, kind string) error {
-	log.FromContext(ctx).Info("Pinging database", "kind", kind)
-	db, err := ri.GetConnection(ctx, dsn, kind)
+func (ri *RelationalDatabaseImpl) Ping(ctx context.Context, dsn string, dbType string) error {
+	log.FromContext(ctx).Info("Pinging database", "dbType", dbType)
+	db, err := ri.GetConnection(ctx, dsn, dbType)
 	if err != nil {
-		return fmt.Errorf("ping failed to open %s database: %w", kind, err)
+		return fmt.Errorf("ping failed to open %s database: %w", dbType, err)
 	}
 
 	if err := db.PingContext(ctx); err != nil {
-		return fmt.Errorf("failed to ping %s database: %w", kind, err)
+		return fmt.Errorf("failed to ping %s database: %w", dbType, err)
 	}
 
 	return nil
 }
 
 // Version returns the version of the MySQL or PostgreSQL database
-func (ri *RelationalDatabaseImpl) Version(ctx context.Context, dsn string, kind string) (string, error) {
-	log.FromContext(ctx).Info("Getting database version", "kind", kind)
-	db, err := ri.GetConnection(ctx, dsn, kind)
+func (ri *RelationalDatabaseImpl) Version(ctx context.Context, dsn string, dbType string) (string, error) {
+	log.FromContext(ctx).Info("Getting database version", "dbType", dbType)
+	db, err := ri.GetConnection(ctx, dsn, dbType)
 	if err != nil {
-		return "", fmt.Errorf("version failed to open %s database: %w", kind, err)
+		return "", fmt.Errorf("version failed to open %s database: %w", dbType, err)
 	}
 
 	var version string
 	err = db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version)
 	if err != nil {
-		return "", fmt.Errorf("version failed to get %s database version: %w", kind, err)
+		return "", fmt.Errorf("version failed to get %s database version: %w", dbType, err)
 	}
 
 	return version, nil
@@ -134,26 +137,26 @@ func (ri *RelationalDatabaseImpl) Version(ctx context.Context, dsn string, kind 
 
 // Load returns the load of the MySQL or PostgreSQL database measured in MB of data and index size.
 // Note it doesn't include CPU or memory usage which could be obtained from other sources.
-func (ri *RelationalDatabaseImpl) Load(ctx context.Context, dsn string, kind string) (int, error) {
-	log.FromContext(ctx).Info("Getting database load", "kind", kind)
-	db, err := ri.GetConnection(ctx, dsn, kind)
+func (ri *RelationalDatabaseImpl) Load(ctx context.Context, dsn string, dbType string) (int, error) {
+	log.FromContext(ctx).Info("Getting database load", "dbType", dbType)
+	db, err := ri.GetConnection(ctx, dsn, dbType)
 	if err != nil {
-		return 0, fmt.Errorf("load failed to open %s database: %w", kind, err)
+		return 0, fmt.Errorf("load failed to open %s database: %w", dbType, err)
 	}
 
 	var totalLoad float64
-	if kind == mysql {
+	if dbType == mysql {
 		err = db.QueryRowContext(ctx, "SELECT data_length + index_length FROM information_schema.tables").Scan(&totalLoad)
 		if err != nil {
-			return 0, fmt.Errorf("load failed to get %s database load: %w", kind, err)
+			return 0, fmt.Errorf("load failed to get %s database load: %w", dbType, err)
 		}
-	} else if kind == postgres {
+	} else if dbType == postgres {
 		err = db.QueryRowContext(ctx, "SELECT pg_database_size(current_database())").Scan(&totalLoad)
 		if err != nil {
-			return 0, fmt.Errorf("load failed to get %s database load: %w", kind, err)
+			return 0, fmt.Errorf("load failed to get %s database load: %w", dbType, err)
 		}
 	} else {
-		return 0, fmt.Errorf("load failed to get %s database load: unsupported kind", kind)
+		return 0, fmt.Errorf("load failed to get %s database load: unsupported dbType", dbType)
 	}
 	// convert bytes to MB
 	totalLoadMB := totalLoad / 1024 / 1024
@@ -164,22 +167,22 @@ func (ri *RelationalDatabaseImpl) Load(ctx context.Context, dsn string, kind str
 // This is used by the database {MySQL,PostgreSQL} provider to initialize the MySQL or PostgreSQL database.
 // It does setup the dbass_controller database.
 // This function is idempotent and can be called multiple times without side effects.
-func (ri *RelationalDatabaseImpl) Initialize(ctx context.Context, dsn string, kind string) error {
-	log.FromContext(ctx).Info("Initializing database", "kind", kind)
-	db, err := ri.GetConnection(ctx, dsn, kind)
+func (ri *RelationalDatabaseImpl) Initialize(ctx context.Context, dsn string, dbType string) error {
+	log.FromContext(ctx).Info("Initializing database", "dbType", dbType)
+	db, err := ri.GetConnection(ctx, dsn, dbType)
 	if err != nil {
-		return fmt.Errorf("initialize failed to open %s database: %w", kind, err)
+		return fmt.Errorf("initialize failed to open %s database: %w", dbType, err)
 	}
 
-	if kind == mysql {
+	if dbType == mysql {
 		_, err = db.ExecContext(ctx, "CREATE DATABASE IF NOT EXISTS dbaas_controller")
 		if err != nil {
-			return fmt.Errorf("initialize failed to create %s database: %w", kind, err)
+			return fmt.Errorf("initialize failed to create %s database: %w", dbType, err)
 		}
 
 		_, err = db.ExecContext(ctx, "USE dbaas_controller")
 		if err != nil {
-			return fmt.Errorf("initialize failed to use %s database: %w", kind, err)
+			return fmt.Errorf("initialize failed to use %s database: %w", dbType, err)
 		}
 
 		_, err = db.ExecContext(ctx, `
@@ -191,17 +194,14 @@ func (ri *RelationalDatabaseImpl) Initialize(ctx context.Context, dsn string, ki
 			password VARCHAR(255) NOT NULL,
 			dbname VARCHAR(255) NOT NULL UNIQUE,
 			CONSTRAINT unique_name_namespace UNIQUE (name, namespace)
-		) ENGINE=InnoDB;`)
+		) ENGINE=InnoDB`)
 		if err != nil {
-			return fmt.Errorf("initialize failed to create %s table: %w", kind, err)
+			return fmt.Errorf("initialize failed to create %s table: %w", dbType, err)
 		}
-	} else if kind == postgres {
-		_, err := db.ExecContext(
-			ctx,
-			"SELECT 'CREATE DATABASE dbaas_controller' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'dbaas_controller')", // nolint: lll
-		)
+	} else if dbType == postgres {
+		_, err := db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS dbaas_controller")
 		if err != nil {
-			return fmt.Errorf("initialize failed to create %s database: %w", kind, err)
+			return fmt.Errorf("initialize failed to create %s database: %w", dbType, err)
 		}
 
 		_, err = db.ExecContext(ctx, `
@@ -211,14 +211,14 @@ func (ri *RelationalDatabaseImpl) Initialize(ctx context.Context, dsn string, ki
 			namespace VARCHAR(255) NOT NULL,
 			username VARCHAR(16) NOT NULL UNIQUE,
 			password VARCHAR(255) NOT NULL,
-			dbname VARCHAR(255) NOT NULL UNIQUE
+			dbname VARCHAR(255) NOT NULL UNIQUE,
 			CONSTRAINT unique_name_namespace UNIQUE (name, namespace)
-		);`)
+		)`)
 		if err != nil {
-			return fmt.Errorf("initialize failed to create %s table: %w", kind, err)
+			return fmt.Errorf("initialize failed to create %s table: %w", dbType, err)
 		}
 	} else {
-		return fmt.Errorf("initialize failed to initialize %s database: unsupported kind", kind)
+		return fmt.Errorf("initialize failed to initialize %s database: unsupported dbType", dbType)
 	}
 
 	return nil
@@ -228,32 +228,32 @@ func (ri *RelationalDatabaseImpl) Initialize(ctx context.Context, dsn string, ki
 func (ri *RelationalDatabaseImpl) CreateDatabase(
 	ctx context.Context,
 	dsn, name, namespace string,
-	kind string,
+	dbType string,
 ) (RelationalDatabaseInfo, error) {
-	log.FromContext(ctx).Info("Creating database", "kind", kind)
-	db, err := ri.GetConnection(ctx, dsn, kind)
+	log.FromContext(ctx).Info("Creating database", "dbType", dbType)
+	db, err := ri.GetConnection(ctx, dsn, dbType)
 	if err != nil {
-		return RelationalDatabaseInfo{}, fmt.Errorf("create database failed to open %s database: %w", kind, err)
+		return RelationalDatabaseInfo{}, fmt.Errorf("create database failed to open %s database: %w", dbType, err)
 	}
 
 	var info RelationalDatabaseInfo
-	if kind == mysql {
+	if dbType == mysql {
 		info, err = ri.databaseInfoMySQL(ctx, dsn, name, namespace)
 		if err != nil {
-			return info, fmt.Errorf("create %s database failed to get database info: %w", kind, err)
+			return info, fmt.Errorf("create %s database failed to get database info: %w", dbType, err)
 		}
 		// Create the database
 		_, err = db.ExecContext(ctx, fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`", info.Dbname))
 		if err != nil {
 			return info, fmt.Errorf(
-				"create %s database error in creating the database `%s`: %w", kind, info.Dbname, err)
+				"create %s database error in creating the database `%s`: %w", dbType, info.Dbname, err)
 		}
 		// Create the user and grant permissions
 		// Use prepared statements to avoid SQL injection vulnerabilities.
 		_, err = db.ExecContext(
 			ctx, fmt.Sprintf("CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s'", info.Username, info.Password))
 		if err != nil {
-			return info, fmt.Errorf("create %s database error creating user `%s`: %w", kind, info.Username, err)
+			return info, fmt.Errorf("create %s database error creating user `%s`: %w", dbType, info.Username, err)
 		}
 
 		_, err = db.ExecContext(ctx, fmt.Sprintf(
@@ -264,28 +264,25 @@ func (ri *RelationalDatabaseImpl) CreateDatabase(
 		if err != nil {
 			return info, fmt.Errorf(
 				"create %s database error granting privileges to user `%s` on database `%s`: %w",
-				kind, info.Username, info.Dbname, err)
+				dbType, info.Username, info.Dbname, err)
 		}
 
 		_, err = db.ExecContext(ctx, "FLUSH PRIVILEGES")
 		if err != nil {
-			return info, fmt.Errorf("create %s database error flushing privileges: %w", kind, err)
+			return info, fmt.Errorf("create %s database error flushing privileges: %w", dbType, err)
 		}
-	} else if kind == postgres {
+	} else if dbType == postgres {
 		info, err = ri.databaseInfoPostgreSQL(ctx, dsn, name, namespace)
 		if err != nil {
-			return info, fmt.Errorf("create database failed to get %s database info: %w", kind, err)
+			return info, fmt.Errorf("create database failed to get %s database info: %w", dbType, err)
 		}
 		// Create the database
-		_, err = db.Exec(
-			fmt.Sprintf(
-				"SELECT 'CREATE DATABASE \"%s\"' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '%s')",
-				info.Dbname, info.Dbname,
-			),
-		)
-		if err != nil {
+		_, err = db.Exec(fmt.Sprintf("CREATE DATABASE \"%s\"", info.Dbname))
+		if pqErr, ok := err.(*pq.Error); !ok || ok && pqErr.Code != "42P04" {
+			// either the error is not a pq.Error or it is a pq.Error but not a duplicate_database error
+			// 42P04 is the error code for duplicate_database
 			return info, fmt.Errorf(
-				"create %s database error in creating the database `%s`: %w", kind, info.Dbname, err)
+				"create %s database error in creating the database `%s`: %w", dbType, info.Dbname, err)
 		}
 
 		// Check if user exists and create or update the user
@@ -293,7 +290,7 @@ func (ri *RelationalDatabaseImpl) CreateDatabase(
 		err = db.QueryRow(fmt.Sprintf("SELECT 1 FROM pg_roles WHERE rolname='%s'", info.Username)).Scan(&userExists)
 		if err != nil && err != sql.ErrNoRows {
 			return info, fmt.Errorf(
-				"create %s database error in check if user exists in database `%s`: %w", kind, info.Dbname, err)
+				"create %s database error in check if user exists in database `%s`: %w", dbType, info.Dbname, err)
 		}
 
 		if userExists == 0 {
@@ -301,7 +298,7 @@ func (ri *RelationalDatabaseImpl) CreateDatabase(
 			_, err = db.Exec(fmt.Sprintf("CREATE USER \"%s\" WITH ENCRYPTED PASSWORD '%s'", info.Username, info.Password))
 			if err != nil {
 				return info, fmt.Errorf(
-					"create %s database error in create user in database `%s`: %w", kind, info.Dbname, err)
+					"create %s database error in create user in database `%s`: %w", dbType, info.Dbname, err)
 			}
 		}
 
@@ -309,25 +306,26 @@ func (ri *RelationalDatabaseImpl) CreateDatabase(
 		_, err = db.Exec(fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE \"%s\" TO \"%s\"", info.Dbname, info.Username))
 		if err != nil {
 			return info, fmt.Errorf(
-				"create %s database error in grant privileges in database `%s`: %w", kind, info.Dbname, err)
+				"create %s database error in grant privileges in database `%s`: %w", dbType, info.Dbname, err)
 		}
 	} else {
-		return RelationalDatabaseInfo{}, fmt.Errorf("create database failed to create %s database: unsupported kind", kind)
+		return RelationalDatabaseInfo{}, fmt.Errorf(
+			"create database failed to create %s database: unsupported dbType", dbType)
 	}
 
 	return info, nil
 }
 
 // DropDatabase drops a database in the MySQL or PostgreSQL database if it exists.
-func (ri *RelationalDatabaseImpl) DropDatabase(ctx context.Context, dsn, name, namespace, kind string) error {
-	log.FromContext(ctx).Info("Dropping database", "kind", kind)
-	db, err := ri.GetConnection(ctx, dsn, kind)
+func (ri *RelationalDatabaseImpl) DropDatabase(ctx context.Context, dsn, name, namespace, dbType string) error {
+	log.FromContext(ctx).Info("Dropping database", "dbType", dbType)
+	db, err := ri.GetConnection(ctx, dsn, dbType)
 	if err != nil {
-		return fmt.Errorf("drop database failed to open %s database: %w", kind, err)
+		return fmt.Errorf("drop database failed to open %s database: %w", dbType, err)
 	}
 
 	info := RelationalDatabaseInfo{}
-	if kind == mysql {
+	if dbType == mysql {
 		info, err = ri.databaseInfoMySQL(ctx, dsn, name, namespace)
 		if err != nil {
 			return fmt.Errorf("drop database failed to get database info: %w", err)
@@ -335,7 +333,7 @@ func (ri *RelationalDatabaseImpl) DropDatabase(ctx context.Context, dsn, name, n
 		// Drop the database
 		_, err = db.ExecContext(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", info.Dbname))
 		if err != nil {
-			return fmt.Errorf("drop database failed to drop %s database: %w", kind, err)
+			return fmt.Errorf("drop database failed to drop %s database: %w", dbType, err)
 		}
 		// Drop the user
 		_, err = db.ExecContext(ctx, fmt.Sprintf("DROP USER IF EXISTS '%s'@'%%'", info.Username))
@@ -347,7 +345,7 @@ func (ri *RelationalDatabaseImpl) DropDatabase(ctx context.Context, dsn, name, n
 		if err != nil {
 			return fmt.Errorf("drop database failed to flush privileges: %w", err)
 		}
-	} else if kind == postgres {
+	} else if dbType == postgres {
 		info, err = ri.databaseInfoPostgreSQL(ctx, dsn, name, namespace)
 		if err != nil {
 			return fmt.Errorf("drop database failed to get database info: %w", err)
@@ -360,12 +358,12 @@ func (ri *RelationalDatabaseImpl) DropDatabase(ctx context.Context, dsn, name, n
 			),
 		)
 		if err != nil {
-			return fmt.Errorf("drop database failed to disconnect users from %s database: %w", kind, err)
+			return fmt.Errorf("drop database failed to disconnect users from %s database: %w", dbType, err)
 		}
 		// Drop the database
 		_, err = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS \"%s\"", info.Dbname))
 		if err != nil {
-			return fmt.Errorf("drop database failed to drop %s database: %w", kind, err)
+			return fmt.Errorf("drop database failed to drop %s database: %w", dbType, err)
 		}
 		// Drop the user
 		_, err = db.Exec(fmt.Sprintf("DROP USER IF EXISTS \"%s\"", info.Username))
@@ -373,7 +371,7 @@ func (ri *RelationalDatabaseImpl) DropDatabase(ctx context.Context, dsn, name, n
 			return fmt.Errorf("drop database failed to drop user: %w", err)
 		}
 	} else {
-		return fmt.Errorf("drop database failed to drop %s database: unsupported kind", kind)
+		return fmt.Errorf("drop database failed to drop %s database: unsupported dbType", dbType)
 	}
 	return nil
 }
@@ -494,13 +492,13 @@ func (ri *RelationalDatabaseImpl) databaseInfoPostgreSQL(
 // GetDatabase returns the database name, username, and password for the given name and namespace.
 func (ri *RelationalDatabaseImpl) GetDatabase(
 	ctx context.Context,
-	dsn, name, namespace, kind string,
+	dsn, name, namespace, dbType string,
 ) (RelationalDatabaseInfo, error) {
-	log.FromContext(ctx).Info("Getting database", "kind", kind, "name", name, "namespace", namespace)
-	if kind == "mysql" {
+	log.FromContext(ctx).Info("Getting database", "dbType", dbType, "name", name, "namespace", namespace)
+	if dbType == "mysql" {
 		return ri.databaseInfoMySQL(ctx, dsn, name, namespace)
-	} else if kind == "postgres" {
+	} else if dbType == "postgres" {
 		return ri.databaseInfoPostgreSQL(ctx, dsn, name, namespace)
 	}
-	return RelationalDatabaseInfo{}, fmt.Errorf("get database failed to get %s database: unsupported kind", kind)
+	return RelationalDatabaseInfo{}, fmt.Errorf("get database failed to get %s database: unsupported dbType", dbType)
 }

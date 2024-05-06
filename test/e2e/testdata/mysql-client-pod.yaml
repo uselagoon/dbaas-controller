@@ -13,4 +13,4 @@ spec:
     command: ["sh", "-c"]
     args:
     - |
-      mysql -h mysql-service.mysql -uroot -pe2e-test-password -e "CREATE DATABASE IF NOT EXISTS seed-database;"
+      mysql -h mysql-service.mysql -uroot -pe2e-mysql-password -e "CREATE DATABASE IF NOT EXISTS seed-database;"

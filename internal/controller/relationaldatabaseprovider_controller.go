@@ -49,7 +49,7 @@ var (
 			Name: "relationaldatabaseprovider_reconcile_error_total",
 			Help: "The total number of reconciled relational database providers errors",
 		},
-		[]string{"kind", "name", "scope", "error"},
+		[]string{"type", "name", "scope", "error"},
 	)
 
 	// promRelationalDatabaseProviderStatus is the gauge for the relational database provider status
@@ -58,7 +58,7 @@ var (
 			Name: "relationaldatabaseprovider_status",
 			Help: "The status of the relational database provider",
 		},
-		[]string{"kind", "name", "scope"},
+		[]string{"type", "name", "scope"},
 	)
 
 	// promRelationalDatabaseProviderConnectionVersion is the gauge for the relational database provider connection version
@@ -67,7 +67,7 @@ var (
 			Name: "relationaldatabaseprovider_connection_version",
 			Help: "The version of the relational database provider connection",
 		},
-		[]string{"kind", "name", "scope", "hostname", "username", "version"},
+		[]string{"type", "name", "scope", "hostname", "username", "version"},
 	)
 )
 
@@ -103,7 +103,7 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 			"", req.Name, "", "get-relationaldbprovider").Inc()
 		return ctrl.Result{}, err
 	}
-	logger = logger.WithValues("kind", instance.Spec.Kind, "scope", instance.Spec.Scope)
+	logger = logger.WithValues("type", instance.Spec.Type, "scope", instance.Spec.Scope)
 	if instance.DeletionTimestamp != nil && !instance.DeletionTimestamp.IsZero() {
 		// The object is being deleted
 		// To be discussed whether we need to delete all the database requests using this provider...
@@ -148,15 +148,15 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 			return r.handleError(
 				ctx,
 				instance,
-				fmt.Sprintf("%s-empty-password", instance.Spec.Kind),
+				fmt.Sprintf("%s-empty-password", instance.Spec.Type),
 				fmt.Errorf(
 					"%s connection secret %s in namespace %s has empty password",
-					instance.Spec.Kind, secret.Name, secret.Namespace,
+					instance.Spec.Type, secret.Name, secret.Namespace,
 				),
 			)
 		}
 		conns = append(conns, reldbConn{
-			kind:             instance.Spec.Kind,
+			dbType:           instance.Spec.Type,
 			name:             conn.Name,
 			hostname:         conn.Hostname,
 			replicaHostnames: conn.ReplicaHostnames,
@@ -172,8 +172,8 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 		return r.handleError(
 			ctx,
 			instance,
-			fmt.Sprintf("%s-unique-name-error", instance.Spec.Kind),
-			fmt.Errorf("%s database connections must have unique names", instance.Spec.Kind),
+			fmt.Sprintf("%s-unique-name-error", instance.Spec.Type),
+			fmt.Errorf("%s database connections must have unique names", instance.Spec.Type),
 		)
 	}
 
@@ -184,7 +184,7 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 		// make a ping to the database to check if it's up and running and we can connect to it
 		// if not, we should return an error and set the status to 0
 		// Note we could periodically check the status of the database and update the status accordingly...
-		if err := r.RelDBClient.Ping(ctx, conn.getDSN(), instance.Spec.Kind); err != nil {
+		if err := r.RelDBClient.Ping(ctx, conn.getDSN(), instance.Spec.Type); err != nil {
 			errors = append(errors, err)
 			dbStatus = append(dbStatus, crdv1alpha1.ConnectionStatus{
 				Name:     conn.name,
@@ -194,7 +194,7 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 			})
 			continue
 		}
-		version, err := r.RelDBClient.Version(ctx, conn.getDSN(), instance.Spec.Kind)
+		version, err := r.RelDBClient.Version(ctx, conn.getDSN(), instance.Spec.Type)
 		if err != nil {
 			errors = append(errors, err)
 			dbStatus = append(dbStatus, crdv1alpha1.ConnectionStatus{
@@ -207,7 +207,7 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 		}
 
 		// check if the database is initialized
-		err = r.RelDBClient.Initialize(ctx, conn.getDSN(), instance.Spec.Kind)
+		err = r.RelDBClient.Initialize(ctx, conn.getDSN(), instance.Spec.Type)
 		if err != nil {
 			errors = append(errors, err)
 			dbStatus = append(dbStatus, crdv1alpha1.ConnectionStatus{
@@ -220,7 +220,7 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 		}
 
 		promRelationalDatabaseProviderConnectionVersion.WithLabelValues(
-			instance.Spec.Kind, req.Name, instance.Spec.Scope, conn.hostname, conn.username, version).Set(1)
+			instance.Spec.Type, req.Name, instance.Spec.Scope, conn.hostname, conn.username, version).Set(1)
 		dbStatus = append(dbStatus, crdv1alpha1.ConnectionStatus{
 			Name:            conn.name,
 			Hostname:        conn.hostname,
@@ -241,16 +241,16 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 		return r.handleError(
 			ctx,
 			instance,
-			fmt.Sprintf("%s-connection-error", instance.Spec.Kind),
-			fmt.Errorf("failed to connect to any of the %s databases: %v", instance.Spec.Kind, errors),
+			fmt.Sprintf("%s-connection-error", instance.Spec.Type),
+			fmt.Errorf("failed to connect to any of the %s databases: %v", instance.Spec.Type, errors),
 		)
 	}
 	if !foundEnabledDatabase {
 		return r.handleError(
 			ctx,
 			instance,
-			fmt.Sprintf("%s-connection-not-any-enabled", instance.Spec.Kind),
-			fmt.Errorf("no enabled working %s database found", instance.Spec.Kind),
+			fmt.Sprintf("%s-connection-not-any-enabled", instance.Spec.Type),
+			fmt.Errorf("no enabled working %s database found", instance.Spec.Type),
 		)
 	}
 
@@ -264,13 +264,13 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 	// update the status
 	if err := r.Status().Update(ctx, instance); err != nil {
 		promRelationalDatabaseProviderReconcileErrorCounter.WithLabelValues(
-			instance.Spec.Kind, req.Name, instance.Spec.Scope, "update-status").Inc()
-		promRelationalDatabaseProviderStatus.WithLabelValues(instance.Spec.Kind, req.Name, instance.Spec.Scope).Set(0)
+			instance.Spec.Type, req.Name, instance.Spec.Scope, "update-status").Inc()
+		promRelationalDatabaseProviderStatus.WithLabelValues(instance.Spec.Type, req.Name, instance.Spec.Scope).Set(0)
 		return ctrl.Result{}, err
 	}
 
 	r.Recorder.Event(instance, "Normal", "Reconciled", "RelationalDatabaseProvider reconciled")
-	promRelationalDatabaseProviderStatus.WithLabelValues(instance.Spec.Kind, req.Name, instance.Spec.Scope).Set(1)
+	promRelationalDatabaseProviderStatus.WithLabelValues(instance.Spec.Type, req.Name, instance.Spec.Scope).Set(1)
 	return ctrl.Result{}, nil
 }
 
@@ -282,8 +282,8 @@ func (r *RelationalDatabaseProviderReconciler) handleError(
 	err error,
 ) (ctrl.Result, error) {
 	promRelationalDatabaseProviderReconcileErrorCounter.WithLabelValues(
-		instance.Spec.Kind, instance.Name, instance.Spec.Scope, promErr).Inc()
-	promRelationalDatabaseProviderStatus.WithLabelValues(instance.Spec.Kind, instance.Name, instance.Spec.Scope).Set(0)
+		instance.Spec.Type, instance.Name, instance.Spec.Scope, promErr).Inc()
+	promRelationalDatabaseProviderStatus.WithLabelValues(instance.Spec.Type, instance.Name, instance.Spec.Scope).Set(0)
 	r.Recorder.Event(instance, v1.EventTypeWarning, errTypeToEventReason(promErr), err.Error())
 
 	// set the status condition to false
@@ -297,7 +297,7 @@ func (r *RelationalDatabaseProviderReconciler) handleError(
 	// update the status
 	if err := r.Status().Update(ctx, instance); err != nil {
 		promRelationalDatabaseProviderReconcileErrorCounter.WithLabelValues(
-			instance.Spec.Kind, instance.Name, instance.Spec.Scope, "update-status").Inc()
+			instance.Spec.Type, instance.Name, instance.Spec.Scope, "update-status").Inc()
 		log.FromContext(ctx).Error(err, "Failed to update status")
 	}
 
@@ -306,7 +306,7 @@ func (r *RelationalDatabaseProviderReconciler) handleError(
 
 // reldbConn is the connection to a MySQL or PostgreSQL database
 type reldbConn struct {
-	kind             string
+	dbType           string
 	name             string
 	hostname         string
 	replicaHostnames []string
@@ -318,12 +318,12 @@ type reldbConn struct {
 
 // getDSN constructs the DSN string for the MySQL or PostgreSQL connection.
 func (rc *reldbConn) getDSN() string {
-	if rc.kind == "mysql" {
+	if rc.dbType == "mysql" {
 		return fmt.Sprintf("%s:%s@tcp(%s:%d)/", rc.username, rc.password, rc.hostname, rc.port)
-	} else if rc.kind == "postgresql" {
+	} else if rc.dbType == "postgres" {
 		return fmt.Sprintf(
-			"host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-			rc.hostname, rc.port, rc.username, rc.password, rc.name,
+			"host=%s port=%d user=%s password=%s sslmode=disable",
+			rc.hostname, rc.port, rc.username, rc.password,
 		)
 	} else {
 		return ""

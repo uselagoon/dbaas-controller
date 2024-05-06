@@ -101,14 +101,6 @@ spec:
                   type: object
                 minItems: 1
                 type: array
-              kind:
-                description: |-
-                  Kind is the kind of the relational database provider
-                  it can be either "mysql" or "postgresql"
-                enum:
-                - mysql
-                - postgresql
-                type: string
               scope:
                 default: development
                 description: |-
@@ -119,10 +111,18 @@ spec:
                 - development
                 - custom
                 type: string
+              type:
+                description: |-
+                  Type is the type of the relational database provider
+                  it can be either "mysql" or "postgres"
+                enum:
+                - mysql
+                - postgres
+                type: string
             required:
             - connections
-            - kind
             - scope
+            - type
             type: object
           status:
             description: RelationalDatabaseProviderStatus defines the observed state

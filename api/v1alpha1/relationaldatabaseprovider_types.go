@@ -63,10 +63,10 @@ type Connection struct {
 type RelationalDatabaseProviderSpec struct {
 	//+kubebuilder:required
 	//+kubebuilder:validation:Required
-	//+kubebuilder:validation:Enum=mysql;postgresql
-	// Kind is the kind of the relational database provider
-	// it can be either "mysql" or "postgresql"
-	Kind string `json:"kind"`
+	//+kubebuilder:validation:Enum=mysql;postgres
+	// Type is the type of the relational database provider
+	// it can be either "mysql" or "postgres"
+	Type string `json:"type"`
 
 	//+kubebuilder:required
 	//+kubebuilder:validation:Required
