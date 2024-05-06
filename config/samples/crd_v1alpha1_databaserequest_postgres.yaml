@@ -1,0 +1,14 @@
+apiVersion: crd.lagoon.sh/v1alpha1
+kind: DatabaseRequest
+metadata:
+  labels:
+    app.kubernetes.io/name: databaserequest
+    app.kubernetes.io/instance: databaserequest-postgres-sample
+    app.kubernetes.io/part-of: dbaas-controller
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: dbaas-controller
+  name: databaserequest-postgres-sample
+spec:
+  name: first-postgres-db
+  scope: development
+  type: postgres
