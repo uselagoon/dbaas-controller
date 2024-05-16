@@ -11,6 +11,8 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
+KIND_CLUSTER ?= kind
+
 # CONTAINER_TOOL defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is
 # scaffolded by default. However, you might want to replace it to use other
@@ -64,10 +66,25 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
+.PHONY: create-kind-cluster
+create-kind-cluster:
+	docker network inspect $(KIND_CLUSTER) >/dev/null || docker network create $(KIND_CLUSTER)
+	kind create cluster --wait=60s --name=$(KIND_CLUSTER) --config=kind-config.yaml
+
+.PHONY: delete-kind-cluster
+delete-kind-cluster:
+	kind delete cluster --name=$(KIND_CLUSTER) && docker network rm $(KIND_CLUSTER)
+
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
-.PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
-test-e2e:
-	kind export kubeconfig --name=kind
+.PHONY: github/test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up inside github action.
+github/test-e2e:
+	go test ./test/e2e/ -v -ginkgo.v
+
+# Create a kind cluster locally and run the test e2e test suite against it
+.PHONY: local-kind/test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up locally
+local-kind/test-e2e: create-kind-cluster
+	export KIND_CLUSTER=$(KIND_CLUSTER) && \
+	kind export kubeconfig --name=$(KIND_CLUSTER) && \
 	go test ./test/e2e/ -v -ginkgo.v
 
 .PHONY: lint

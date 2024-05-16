@@ -53,19 +53,35 @@ type MySQLInterface interface {
 }
 
 // MySQLImpl is the implementation of the MySQL database
-type MySQLImpl struct{}
+// Note that we maintain a connection cache to avoid opening a new connection for each operation.
+type MySQLImpl struct {
+	ConnectionCache map[string]*sql.DB
+}
 
 // Make sure MySQLImpl implements MySQLInterface
 var _ MySQLInterface = (*MySQLImpl)(nil)
 
+// getConnection returns a connection to the MySQL database
+func (mi *MySQLImpl) getConnection(ctx context.Context, dsn string) (*sql.DB, error) {
+	if db, ok := mi.ConnectionCache[dsn]; ok {
+		return db, nil
+	}
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open MySQL database: %w", err)
+	}
+	log.FromContext(ctx).Info("Opening MySQL database connection")
+	mi.ConnectionCache[dsn] = db
+	return db, nil
+}
+
 // Ping pings the MySQL database
 func (mi *MySQLImpl) Ping(ctx context.Context, dsn string) error {
 	log.FromContext(ctx).Info("Pinging MySQL database")
-	db, err := sql.Open("mysql", dsn)
+	db, err := mi.getConnection(ctx, dsn)
 	if err != nil {
 		return fmt.Errorf("ping failed to open MySQL database: %w", err)
 	}
-	defer db.Close()
 
 	if err := db.PingContext(ctx); err != nil {
 		return fmt.Errorf("failed to ping MySQL database: %w", err)
@@ -77,11 +93,10 @@ func (mi *MySQLImpl) Ping(ctx context.Context, dsn string) error {
 // Version returns the version of the MySQL database
 func (mi *MySQLImpl) Version(ctx context.Context, dsn string) (string, error) {
 	log.FromContext(ctx).Info("Getting MySQL database version")
-	db, err := sql.Open("mysql", dsn)
+	db, err := mi.getConnection(ctx, dsn)
 	if err != nil {
 		return "", fmt.Errorf("version failed to open MySQL database: %w", err)
 	}
-	defer db.Close()
 
 	var version string
 	err = db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version)
@@ -96,11 +111,10 @@ func (mi *MySQLImpl) Version(ctx context.Context, dsn string) (string, error) {
 // Note it doesn't include CPU or memory usage which could be obtained from other sources.
 func (mi *MySQLImpl) Load(ctx context.Context, dsn string) (int, error) {
 	log.FromContext(ctx).Info("Getting MySQL database load")
-	db, err := sql.Open("mysql", dsn)
+	db, err := mi.getConnection(ctx, dsn)
 	if err != nil {
 		return 0, fmt.Errorf("load failed to open MySQL database: %w", err)
 	}
-	defer db.Close()
 
 	query := `
         SELECT SUM(data_length + index_length) AS total_size
@@ -121,11 +135,10 @@ func (mi *MySQLImpl) Initialize(ctx context.Context, dsn string) error {
 	log.FromContext(ctx).Info("Initializing MySQL database")
 
 	// Connect to MySQL server without specifying a database
-	db, err := sql.Open("mysql", dsn)
+	db, err := mi.getConnection(ctx, dsn)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
 
 	// Create the database if it doesn't exist
 	_, err = db.ExecContext(ctx, "CREATE DATABASE IF NOT EXISTS dbaas_controller")
@@ -182,11 +195,10 @@ func (mi *MySQLImpl) databaseInfo(ctx context.Context, dsn, namespace, name stri
 	info := DatabaseInfo{}
 
 	// Connect to MySQL server and select the dbaas_controller database
-	db, err := sql.Open("mysql", dsn)
+	db, err := mi.getConnection(ctx, dsn)
 	if err != nil {
 		return info, fmt.Errorf("failed to connect to MySQL server: %w", err)
 	}
-	defer db.Close()
 
 	_, err = db.ExecContext(ctx, "USE dbaas_controller")
 	if err != nil {
@@ -240,11 +252,10 @@ func (mi *MySQLImpl) CreateDatabase(ctx context.Context, dsn, name, namespace st
 		return info, fmt.Errorf("failed to get database info: %w", err)
 	}
 	// Connect to the database server
-	db, err := sql.Open("mysql", dsn)
+	db, err := mi.getConnection(ctx, dsn)
 	if err != nil {
 		return info, fmt.Errorf("create database error connecting to the database server: %w", err)
 	}
-	defer db.Close()
 
 	// Ping the database to verify connection establishment.
 	if err := db.PingContext(ctx); err != nil {
@@ -294,11 +305,10 @@ func (mi *MySQLImpl) DropDatabase(ctx context.Context, dsn, name, namespace stri
 	}
 
 	// Connect to the database server
-	db, err := sql.Open("mysql", dsn)
+	db, err := mi.getConnection(ctx, dsn)
 	if err != nil {
 		return fmt.Errorf("drop database error connecting to the database server: %w", err)
 	}
-	defer db.Close()
 
 	// Ping the database to verify connection establishment.
 	if err := db.PingContext(ctx); err != nil {

@@ -18,6 +18,7 @@ package main
 
 import (
 	"crypto/tls"
+	"database/sql"
 	"flag"
 	"os"
 
@@ -126,10 +127,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	mysqlClient := &mysql.MySQLImpl{
+		ConnectionCache: make(map[string]*sql.DB),
+	}
+
 	if err = (&controller.DatabaseRequestReconciler{
 		Client:      mgr.GetClient(),
 		Scheme:      mgr.GetScheme(),
-		MySQLClient: &mysql.MySQLImpl{},
+		MySQLClient: mysqlClient,
 	}).SetupWithManager(mgr, maxConcurrentReconciles); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DatabaseRequest")
 		os.Exit(1)
@@ -137,7 +142,7 @@ func main() {
 	if err = (&controller.DatabaseMySQLProviderReconciler{
 		Client:      mgr.GetClient(),
 		Scheme:      mgr.GetScheme(),
-		MySQLClient: &mysql.MySQLImpl{},
+		MySQLClient: mysqlClient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DatabaseMySQLProvider")
 		os.Exit(1)
