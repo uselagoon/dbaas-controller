@@ -2,4 +2,5 @@
 resources:
 - crd_v1alpha1_databaserequest.yaml
 - crd_v1alpha1_relationaldatabaseprovider.yaml
+- crd_v1alpha1_mongodbprovider.yaml
 #+kubebuilder:scaffold:manifestskustomizesamples

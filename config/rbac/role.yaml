@@ -64,6 +64,32 @@ rules:
 - apiGroups:
   - crd.lagoon.sh
   resources:
+  - mongodbproviders
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - crd.lagoon.sh
+  resources:
+  - mongodbproviders/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - crd.lagoon.sh
+  resources:
+  - mongodbproviders/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - crd.lagoon.sh
+  resources:
   - relationaldatabaseproviders
   verbs:
   - create

@@ -21,13 +21,32 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// Connection defines the connection to a relational database like MySQL or PostgreSQL
-type Connection struct {
+// MongoDBAuth defines the authorisation mechanisms that mongo can use
+type MongoDBAuth struct {
 	//+kubebuilder:required
-	// Name is the name of the relational database like MySQL or PostgreSQL connection
+	//+kubebuilder:validation:Required
+	//+kubebuilder:validation:Enum=SCRAM-SHA-1;SCRAM-SHA-256;MONGODB-CR;MongoDB-AWS;X509
+	// Mechanism is the authentication mechanism for the MongoDB connection
+	// https://www.mongodb.com/docs/drivers/go/current/fundamentals/auth/#std-label-golang-authentication-mechanisms
+	Mechanism string `json:"mechanism"`
+
+	//+kubebuilder:optional
+	//+kubebuilder:default:admin
+	// Source is the source of the authentication mechanism for the MongoDB connection
+	Source string `json:"source,omitempty"`
+
+	//+kubebuilder:optional
+	//+kubebuilder:default:true
+	// TLS is the flag to enable or disable TLS for the MongoDB connection
+	TLS bool `json:"tls,omitempty"`
+}
+
+type MongoDBConnection struct {
+	//+kubebuilder:required
+	// Name is the name of the MongoDB connection
 	// it is used to identify the connection. Please use a unique name
-	// for each connection. This field will be used in the DatabaseRequest
-	// to reference the connection. The relationaldatabaseprovider controller will
+	// for each connection. This field will be used in the MongoDBProvider
+	// to reference the connection. The MongoDBProvider controller will
 	// error if the name is not unique.
 	Name string `json:"name"`
 
@@ -43,16 +62,22 @@ type Connection struct {
 	// PasswordSecretRef is the reference to the secret containing the password
 	PasswordSecretRef v1.SecretReference `json:"passwordSecretRef"`
 
-	//+kubebuilder:required
+	//+kubebuilder:optional
+	//+kubebuilder:default:=27017
 	//+kubebuilder:validation:Required
 	//+kubebuilder:validation:Minimum=1
 	//+kubebuilder:validation:Maximum=65535
 	// Port is the port of the relational database
-	Port int `json:"port"`
+	Port int `json:"port,omitempty"`
+
+	//+kubebuilder:optional
+	//+kubebuilder:default:=root
+	// Username is the username of the relational database
+	Username string `json:"username,omitempty"`
 
 	//+kubebuilder:required
-	// Username is the username of the relational database
-	Username string `json:"username"`
+	// Auth is the authentication mechanism for the MongoDB connection
+	Auth MongoDBAuth `json:"auth"`
 
 	//+kubebuilder:optional
 	//+kubebuilder:default:=true
@@ -60,15 +85,8 @@ type Connection struct {
 	Enabled bool `json:"enabled,omitempty"`
 }
 
-// RelationalDatabaseProviderSpec defines the desired state of RelationalDatabaseProvider
-type RelationalDatabaseProviderSpec struct {
-	//+kubebuilder:required
-	//+kubebuilder:validation:Required
-	//+kubebuilder:validation:Enum=mysql;postgres
-	// Type is the type of the relational database provider
-	// it can be either "mysql" or "postgres"
-	Type string `json:"type"`
-
+// MongoDBProviderSpec defines the desired state of MongoDBProvider
+type MongoDBProviderSpec struct {
 	//+kubebuilder:required
 	//+kubebuilder:validation:Required
 	//+kubebuilder:validation:Enum=production;development;custom
@@ -79,11 +97,11 @@ type RelationalDatabaseProviderSpec struct {
 
 	//+kubebuilder:validation:MinItems=1
 	// Connections defines the connection to a relational database
-	Connections []Connection `json:"connections"`
+	Connections []MongoDBConnection `json:"connections"`
 }
 
-// RelationalDatabaseProviderStatus defines the observed state of RelationalDatabaseProvider
-type RelationalDatabaseProviderStatus struct {
+// MongoDBProviderStatus defines the observed state of MongoDBProvider
+type MongoDBProviderStatus struct {
 	// Conditions defines the status conditions
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
@@ -96,26 +114,25 @@ type RelationalDatabaseProviderStatus struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
-//+kubebuilder:resource:scope=Cluster
 
-// RelationalDatabaseProvider is the Schema for the relationaldatabaseprovider API
-type RelationalDatabaseProvider struct {
+// MongoDBDProvider is the Schema for the mongodbproviders API
+type MongoDBDProvider struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   RelationalDatabaseProviderSpec   `json:"spec,omitempty"`
-	Status RelationalDatabaseProviderStatus `json:"status,omitempty"`
+	Spec   MongoDBProviderSpec   `json:"spec,omitempty"`
+	Status MongoDBProviderStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 
-// RelationalDatabaseProviderList contains a list of RelationalDatabaseProvider
-type RelationalDatabaseProviderList struct {
+// MongoDBProviderList contains a list of MongoDBProvider
+type MongoDBProviderList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []RelationalDatabaseProvider `json:"items"`
+	Items           []MongoDBDProvider `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&RelationalDatabaseProvider{}, &RelationalDatabaseProviderList{})
+	SchemeBuilder.Register(&MongoDBDProvider{}, &MongoDBProviderList{})
 }

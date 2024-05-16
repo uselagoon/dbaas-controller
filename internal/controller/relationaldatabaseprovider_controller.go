@@ -165,7 +165,7 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 			username:         conn.Username,
 			enabled:          conn.Enabled,
 		})
-		uniqueNames[conn.Hostname] = struct{}{}
+		uniqueNames[conn.Name] = struct{}{}
 	}
 
 	if len(uniqueNames) != len(instance.Spec.Connections) {
@@ -192,6 +192,9 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 				Status:   "unavailable",
 				Enabled:  conn.enabled,
 			})
+			promRelationalDatabaseProviderConnectionVersion.WithLabelValues(
+				instance.Spec.Type, req.Name, instance.Spec.Scope, conn.hostname, conn.username, "").Set(0)
+			logger.Error(err, "Failed to ping the database", "hostname", conn.hostname)
 			continue
 		}
 		version, err := r.RelDBClient.Version(ctx, conn.getDSN(), instance.Spec.Type)
@@ -203,6 +206,9 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 				Status:   "unavailable",
 				Enabled:  conn.enabled,
 			})
+			logger.Error(err, "Failed to get the database version", "hostname", conn.hostname)
+			promRelationalDatabaseProviderConnectionVersion.WithLabelValues(
+				instance.Spec.Type, req.Name, instance.Spec.Scope, conn.hostname, conn.username, version).Set(0)
 			continue
 		}
 
@@ -216,11 +222,11 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 				Status:   "unavailable",
 				Enabled:  conn.enabled,
 			})
+			promRelationalDatabaseProviderConnectionVersion.WithLabelValues(
+				instance.Spec.Type, req.Name, instance.Spec.Scope, conn.hostname, conn.username, version).Set(0)
 			continue
 		}
 
-		promRelationalDatabaseProviderConnectionVersion.WithLabelValues(
-			instance.Spec.Type, req.Name, instance.Spec.Scope, conn.hostname, conn.username, version).Set(1)
 		dbStatus = append(dbStatus, crdv1alpha1.ConnectionStatus{
 			Name:            conn.name,
 			Hostname:        conn.hostname,
@@ -228,9 +234,13 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 			Status:          "available",
 			Enabled:         conn.enabled,
 		})
-
 		if conn.enabled {
 			foundEnabledDatabase = true
+			promRelationalDatabaseProviderConnectionVersion.WithLabelValues(
+				instance.Spec.Type, req.Name, instance.Spec.Scope, conn.hostname, conn.username, version).Set(1)
+		} else {
+			promRelationalDatabaseProviderConnectionVersion.WithLabelValues(
+				instance.Spec.Type, req.Name, instance.Spec.Scope, conn.hostname, conn.username, version).Set(0)
 		}
 	}
 

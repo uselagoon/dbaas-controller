@@ -1,0 +1,23 @@
+# permissions for end users to view mongodbproviders.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: dbaas-controller
+    app.kubernetes.io/managed-by: kustomize
+  name: mongodbprovider-viewer-role
+rules:
+- apiGroups:
+  - crd.lagoon.sh
+  resources:
+  - mongodbproviders
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - crd.lagoon.sh
+  resources:
+  - mongodbproviders/status
+  verbs:
+  - get
