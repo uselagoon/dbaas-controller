@@ -27,7 +27,10 @@ import (
 	"github.com/uselagoon/dbaas-controller/test/utils"
 )
 
-const namespace = "dbaas-controller-system"
+const (
+	namespace = "dbaas-controller-system"
+	timetout  = "500s"
+)
 
 var _ = Describe("controller", Ordered, func() {
 	BeforeAll(func() {
@@ -69,18 +72,31 @@ var _ = Describe("controller", Ordered, func() {
 		_, _ = utils.Run(cmd)
 
 		By("removing the DatabaseRequest resource")
-		// we enforce the deletion by removing the finalizer
+		for _, name := range []string{"databaserequest-sample", "seed-databaserequest-sample"} {
+			// we enforce the deletion by removing the finalizer
+			cmd = exec.Command(
+				"kubectl",
+				"patch",
+				"databaserequest",
+				name,
+				"-p",
+				`{"metadata":{"finalizers":[]}}`,
+				"--type=merge",
+			)
+			_, _ = utils.Run(cmd)
+			cmd = exec.Command("kubectl", "delete", "--force", "databaserequest", name)
+			_, _ = utils.Run(cmd)
+
+			By("removing service and secret")
+			cmd = exec.Command(
+				"kubectl", "delete", "service", "-n", "default", "-l", fmt.Sprintf("app.kubernetes.io/instance=%s", name))
+			_, _ = utils.Run(cmd)
+			cmd = exec.Command(
+				"kubectl", "delete", "secret", "-n", "default", "-l", fmt.Sprintf("app.kubernetes.io/instance=%s", name))
+			_, _ = utils.Run(cmd)
+		}
 		cmd = exec.Command(
-			"kubectl",
-			"patch",
-			"databaserequest",
-			"databaserequest-sample",
-			"-p",
-			`{"metadata":{"finalizers":[]}}`,
-			"--type=merge",
-		)
-		_, _ = utils.Run(cmd)
-		cmd = exec.Command("kubectl", "delete", "--force", "databaserequest", "databaserequest-sample")
+			"kubectl", "delete", "secret", "-n", "default", "seed-mysql-secret")
 		_, _ = utils.Run(cmd)
 
 		By("removing manager namespace")
@@ -90,16 +106,6 @@ var _ = Describe("controller", Ordered, func() {
 		By("uninstalling MySQL pod")
 		utils.UninstallMySQLPod()
 
-		By("removing service and secret")
-		cmd = exec.Command(
-			"kubectl", "delete", "service", "-n", "default", "-l", "app.kubernetes.io/instance=databaserequest-sample")
-		_, _ = utils.Run(cmd)
-		cmd = exec.Command(
-			"kubectl", "delete", "secret", "-n", "default", "-l", "app.kubernetes.io/instance=databaserequest-sample")
-		_, _ = utils.Run(cmd)
-		cmd = exec.Command(
-			"kubectl", "delete", "secret", "-n", "default", "seed-mysql-secret")
-		_, _ = utils.Run(cmd)
 	})
 
 	Context("Operator", func() {
@@ -177,7 +183,7 @@ var _ = Describe("controller", Ordered, func() {
 				"--for=condition=Ready",
 				"databasemysqlprovider",
 				"databasemysqlprovider-sample",
-				"--timeout=60s",
+				fmt.Sprintf("--timeout=%s", timetout),
 			)
 			_, err = utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
@@ -194,7 +200,7 @@ var _ = Describe("controller", Ordered, func() {
 				"--for=condition=Ready",
 				"databaserequest",
 				"databaserequest-sample",
-				"--timeout=60s",
+				fmt.Sprintf("--timeout=%s", timetout),
 			)
 			_, err = utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
@@ -267,6 +273,51 @@ var _ = Describe("controller", Ordered, func() {
 			cmd = exec.Command("kubectl", "apply", "-f", "test/e2e/testdata/mysql-client-pod.yaml")
 			_, err = utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+			By("creating a seed DatabaseRequest resource")
+			cmd = exec.Command("kubectl", "apply", "-f", "config/samples/crd_v1alpha1_seed_databaserequest.yaml")
+			_, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+			By("validating that the DatabaseRequest resource is created")
+			cmd = exec.Command(
+				"kubectl",
+				"wait",
+				"--for=condition=Ready",
+				"databaserequest",
+				"seed-databaserequest-sample",
+				fmt.Sprintf("--timeout=%s", timetout),
+			)
+			_, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+			// verify that the service and secret got created
+			By("validating that the service is created")
+			cmd = exec.Command(
+				"kubectl",
+				"get",
+				"service",
+				"-n", "default",
+				"-l", "app.kubernetes.io/instance=seed-databaserequest-sample",
+			)
+			serviceOutput, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			serviceNames = utils.GetNonEmptyLines(string(serviceOutput))
+			ExpectWithOffset(1, serviceNames).Should(HaveLen(2))
+			ExpectWithOffset(1, serviceNames[1]).Should(ContainSubstring("seed-mysql-db"))
+
+			By("validating that the secret is created")
+			cmd = exec.Command(
+				"kubectl",
+				"get",
+				"secret",
+				"-n", "default",
+				"-l", "app.kubernetes.io/instance=seed-databaserequest-sample",
+			)
+			secretOutput, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			secretNames = utils.GetNonEmptyLines(string(secretOutput))
+			ExpectWithOffset(1, secretNames).Should(HaveLen(2))
 
 			// uncomment to debug ...
 			//time.Sleep(15 * time.Minute)
