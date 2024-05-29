@@ -1,16 +1,14 @@
 apiVersion: crd.lagoon.sh/v1alpha1
-kind: DatabaseMySQLProvider
+kind: RelationalDatabaseProvider
 metadata:
   labels:
-    app.kubernetes.io/name: databasemysqlprovider
-    app.kubernetes.io/instance: databasemysqlprovider-sample
-    app.kubernetes.io/part-of: dbaas-controller
+    app.kubernetes.io/name: dbaas-controller
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/created-by: dbaas-controller
-  name: databasemysqlprovider-sample
+  name: relationaldatabaseprovider-mysql-sample
 spec:
+  type: mysql
   scope: development
-  mysqlConnections:
+  connections:
     - name: primary-test-mysql-connection
       hostname: mysql-service.mysql
       passwordSecretRef:

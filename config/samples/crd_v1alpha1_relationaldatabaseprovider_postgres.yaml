@@ -1,0 +1,19 @@
+apiVersion: crd.lagoon.sh/v1alpha1
+kind: RelationalDatabaseProvider
+metadata:
+  labels:
+    app.kubernetes.io/name: dbaas-controller
+    app.kubernetes.io/managed-by: kustomize
+  name: relationaldatabaseprovider-postgres-sample
+spec:
+  type: postgres
+  scope: development
+  connections:
+    - name: primary-test-postgres-connection
+      hostname: postgres-service.postgres
+      passwordSecretRef:
+        name: postgres-secret
+        namespace: postgres
+      port: 5432
+      username: postgres
+      enabled: true

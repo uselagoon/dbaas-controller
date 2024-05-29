@@ -18,7 +18,7 @@ spec:
                    # out of the box
     env:
     - name: MYSQL_ROOT_PASSWORD
-      value: "e2e-test-password"
+      value: "e2e-mysql-password"
     ports:
     - containerPort: 3306
       name: mysql
@@ -43,4 +43,4 @@ metadata:
   namespace: mysql
 type: Opaque
 data:
-  password: ZTJlLXRlc3QtcGFzc3dvcmQ=
+  password: ZTJlLW15c3FsLXBhc3N3b3Jk

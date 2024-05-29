@@ -1,0 +1,17 @@
+apiVersion: crd.lagoon.sh/v1alpha1
+kind: DatabaseRequest
+metadata:
+  labels:
+    app.kubernetes.io/name: databaserequest
+    app.kubernetes.io/instance: databaserequest-seed-sample
+    app.kubernetes.io/part-of: dbaas-controller
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: dbaas-controller
+  name: databaserequest-seed-sample
+spec:
+  name: first-seed-db
+  seed:
+    name: seed-mysql-secret
+    namespace: default
+  scope: development
+  type: mysql

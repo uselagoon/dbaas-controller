@@ -68,8 +68,12 @@ test: manifests generate fmt vet envtest ## Run tests.
 
 .PHONY: create-kind-cluster
 create-kind-cluster:
-	docker network inspect $(KIND_CLUSTER) >/dev/null || docker network create $(KIND_CLUSTER)
-	kind create cluster --wait=60s --name=$(KIND_CLUSTER) --config=kind-config.yaml
+	@if ! kind get clusters | grep -q $(KIND_CLUSTER); then \
+		docker network inspect $(KIND_CLUSTER) >/dev/null 2>&1 || docker network create $(KIND_CLUSTER); \
+		kind create cluster --wait=60s --name=$(KIND_CLUSTER) --config=kind-config.yaml; \
+	else \
+		echo "Cluster $(KIND_CLUSTER) already exists"; \
+	fi
 
 .PHONY: delete-kind-cluster
 delete-kind-cluster:

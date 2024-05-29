@@ -18,7 +18,6 @@ package main
 
 import (
 	"crypto/tls"
-	"database/sql"
 	"flag"
 	"os"
 
@@ -37,7 +36,7 @@ import (
 
 	crdv1alpha1 "github.com/uselagoon/dbaas-controller/api/v1alpha1"
 	"github.com/uselagoon/dbaas-controller/internal/controller"
-	"github.com/uselagoon/dbaas-controller/internal/database/mysql"
+	"github.com/uselagoon/dbaas-controller/internal/database"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -127,28 +126,32 @@ func main() {
 		os.Exit(1)
 	}
 
-	mysqlClient := &mysql.MySQLImpl{
-		ConnectionCache: make(map[string]*sql.DB),
-	}
+	relDBClient := database.New()
 
 	if err = (&controller.DatabaseRequestReconciler{
-		Client:      mgr.GetClient(),
-		Scheme:      mgr.GetScheme(),
-		MySQLClient: mysqlClient,
+		Client:                   mgr.GetClient(),
+		Scheme:                   mgr.GetScheme(),
+		RelationalDatabaseClient: relDBClient,
 	}).SetupWithManager(mgr, maxConcurrentReconciles); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DatabaseRequest")
 		os.Exit(1)
 	}
-	if err = (&controller.DatabaseMySQLProviderReconciler{
+	if err = (&controller.RelationalDatabaseProviderReconciler{
 		Client:      mgr.GetClient(),
 		Scheme:      mgr.GetScheme(),
-		MySQLClient: mysqlClient,
+		RelDBClient: relDBClient,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "DatabaseMySQLProvider")
+		setupLog.Error(err, "unable to create controller", "controller", "RelationalDatabaseProvider")
+		os.Exit(1)
+	}
+	if err = (&controller.MongoDBProviderReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "MongoDBProvider")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
-
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)

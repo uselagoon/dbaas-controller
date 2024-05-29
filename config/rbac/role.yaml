@@ -38,32 +38,6 @@ rules:
 - apiGroups:
   - crd.lagoon.sh
   resources:
-  - databasemysqlproviders
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - crd.lagoon.sh
-  resources:
-  - databasemysqlproviders/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - crd.lagoon.sh
-  resources:
-  - databasemysqlproviders/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - crd.lagoon.sh
-  resources:
   - databaserequests
   verbs:
   - create
@@ -83,6 +57,58 @@ rules:
   - crd.lagoon.sh
   resources:
   - databaserequests/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - crd.lagoon.sh
+  resources:
+  - mongodbproviders
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - crd.lagoon.sh
+  resources:
+  - mongodbproviders/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - crd.lagoon.sh
+  resources:
+  - mongodbproviders/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - crd.lagoon.sh
+  resources:
+  - relationaldatabaseproviders
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - crd.lagoon.sh
+  resources:
+  - relationaldatabaseproviders/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - crd.lagoon.sh
+  resources:
+  - relationaldatabaseproviders/status
   verbs:
   - get
   - patch

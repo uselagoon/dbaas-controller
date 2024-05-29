@@ -33,11 +33,85 @@ const (
 	certmanagerVersion = "v1.5.3"
 	certmanagerURLTmpl = "https://github.com/jetstack/cert-manager/releases/download/%s/cert-manager.yaml"
 
-	mysqlYaml = "test/e2e/testdata/mysql.yaml"
+	mysqlYaml    = "test/e2e/testdata/mysql.yaml"
+	postgresYaml = "test/e2e/testdata/postgres.yaml"
 )
 
 func warnError(err error) {
 	fmt.Fprintf(GinkgoWriter, "warning: %v\n", err)
+}
+
+// InstallRelationalDatabases installs both MySQL and PostgreSQL pods to be used for testing.
+func InstallRelationalDatabases() error {
+	dir, err := GetProjectDir()
+	if err != nil {
+		return err
+	}
+	errChan := make(chan error, 2)
+	for _, yaml := range []string{mysqlYaml, postgresYaml} {
+		cmd := exec.Command("kubectl", "apply", "-f", yaml)
+		cmd.Dir = dir
+		fmt.Fprintf(GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
+		go func() {
+			_, err := Run(cmd)
+			errChan <- err
+		}()
+	}
+	for i := 0; i < 2; i++ {
+		if err := <-errChan; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// InstallMongoDB installs a MongoDB pod to be used for testing.
+func InstallMongoDB() error {
+	dir, err := GetProjectDir()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("kubectl", "apply", "-f", "test/e2e/testdata/mongodb.yaml")
+	cmd.Dir = dir
+	fmt.Fprintf(GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
+	_, err = Run(cmd)
+	return err
+}
+
+// UninstallRelationalDatabases uninstalls both MySQL and PostgreSQL pods.
+func UninstallRelationalDatabases() {
+	dir, err := GetProjectDir()
+	if err != nil {
+		warnError(err)
+	}
+	errChan := make(chan error, 2)
+	for _, yaml := range []string{mysqlYaml, postgresYaml} {
+		cmd := exec.Command("kubectl", "delete", "-f", yaml)
+		cmd.Dir = dir
+		fmt.Fprintf(GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
+		go func() {
+			_, err := Run(cmd)
+			errChan <- err
+		}()
+	}
+	for i := 0; i < 2; i++ {
+		if err := <-errChan; err != nil {
+			warnError(err)
+		}
+	}
+}
+
+// UninstallMongoDB uninstalls the MongoDB pod.
+func UninstallMongoDB() {
+	dir, err := GetProjectDir()
+	if err != nil {
+		warnError(err)
+	}
+	cmd := exec.Command("kubectl", "delete", "-f", "test/e2e/testdata/mongodb.yaml")
+	cmd.Dir = dir
+	if _, err := Run(cmd); err != nil {
+		warnError(err)
+	}
 }
 
 // InstallMySQL installs a MySQL pod to be used for testing.

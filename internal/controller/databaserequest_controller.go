@@ -42,7 +42,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	crdv1alpha1 "github.com/uselagoon/dbaas-controller/api/v1alpha1"
-	"github.com/uselagoon/dbaas-controller/internal/database/mysql"
+	"github.com/uselagoon/dbaas-controller/internal/database"
 )
 
 const databaseRequestFinalizer = "databaserequest.crd.lagoon.sh/finalizer"
@@ -83,10 +83,10 @@ var (
 // DatabaseRequestReconciler reconciles a DatabaseRequest object
 type DatabaseRequestReconciler struct {
 	client.Client
-	Scheme      *runtime.Scheme
-	Recorder    record.EventRecorder
-	MySQLClient mysql.MySQLInterface
-	Locks       sync.Map
+	Scheme                   *runtime.Scheme
+	Recorder                 record.EventRecorder
+	RelationalDatabaseClient database.RelationalDatabaseInterface
+	Locks                    sync.Map
 }
 
 const (
@@ -156,7 +156,7 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if err != nil {
 			return r.handleError(ctx, databaseRequest, "seed-database", err)
 		}
-		if err := r.mysqlTestConnection(ctx, dbInfo); err != nil {
+		if err := r.relDBTestConnection(ctx, dbInfo, databaseRequest.Spec.Type); err != nil {
 			return r.handleError(ctx, databaseRequest, "seed-database-connection", err)
 		}
 	} else {
@@ -181,19 +181,18 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// Note at the moment we only have one "primary" connection per database request
 		// Implementing additional users would require to extend the logic here
 		// check if the database request is already created and the secret and service exist
-		switch databaseRequest.Spec.Type {
-		case mysqlType:
-			logger.Info("Get MySQL database information")
+		if databaseRequest.Spec.Type == mysqlType || databaseRequest.Spec.Type == postgresType {
+			logger.Info("Get relational database info")
+			// get the database info
 			var err error
-			dbInfo, err = r.mysqlInfo(ctx, databaseRequest)
+			dbInfo, err = r.relDBInfo(ctx, databaseRequest)
 			if err != nil {
-				return r.handleError(ctx, databaseRequest, "mysql-info", err)
+				return r.handleError(
+					ctx, databaseRequest, fmt.Sprintf("get-%s-database-info", databaseRequest.Spec.Type), err)
 			}
-		case postgresType:
-			logger.Info("Get PostgreSQL database information")
-		case mongodbType:
-			logger.Info("Get MongoDB database information")
-		default:
+		} else if databaseRequest.Spec.Type == mongodbType {
+			logger.Info("Get mongodb database info")
+		} else {
 			logger.Error(ErrInvalidDatabaseType, "Unsupported database type", "type", databaseRequest.Spec.Type)
 		}
 	}
@@ -377,23 +376,19 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 	ctx context.Context, databaseRequest *crdv1alpha1.DatabaseRequest) (ctrl.Result, error) {
 	// handle deletion logic
 	logger := log.FromContext(ctx)
-	if databaseRequest.Spec.DropDatabaseOnDelete {
-		switch databaseRequest.Spec.Type {
-		case mysqlType:
-			// handle mysql deletion
+	if databaseRequest.Spec.Seed == nil && databaseRequest.Spec.DropDatabaseOnDelete {
+		if databaseRequest.Spec.Type == mysqlType || databaseRequest.Spec.Type == postgresType {
+			// handle relational database deletion
 			// Note at the moment we only have one "primary" connection per database request
 			// Implementing additional users would require to extend the logic here
-			logger.Info("Dropping MySQL database")
-			if err := r.mysqlDeletion(ctx, databaseRequest); err != nil {
-				return r.handleError(ctx, databaseRequest, "mysql-drop", err)
+			logger.Info("Dropping relational database")
+			if err := r.relDBDeletion(ctx, databaseRequest); err != nil {
+				return r.handleError(ctx, databaseRequest, fmt.Sprintf("%s-drop", databaseRequest.Spec.Type), err)
 			}
-		case postgresType:
-			// handle postgres deletion
-			logger.Info("Dropping PostgreSQL database")
-		case mongodbType:
+		} else if databaseRequest.Spec.Type == mongodbType {
 			// handle mongodb deletion
 			logger.Info("Dropping MongoDB database")
-		default:
+		} else {
 			// this should never happen, but just in case
 			logger.Error(ErrInvalidDatabaseType, "Unsupported database type", "type", databaseRequest.Spec.Type)
 			return r.handleError(ctx, databaseRequest, "invalid-database-type", ErrInvalidDatabaseType)
@@ -433,28 +428,23 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 func (r *DatabaseRequestReconciler) createDatabase(
 	ctx context.Context, databaseRequest *crdv1alpha1.DatabaseRequest) error {
 	logger := log.FromContext(ctx)
-	switch databaseRequest.Spec.Type {
-	case mysqlType:
-		// handle mysql creation
+	if databaseRequest.Spec.Type == mysqlType || databaseRequest.Spec.Type == postgresType {
+		// handle relational database creation
 		// Note at the moment we only have one "primary" connection per database request
 		// Implementing additional users would require to extend the logic here
-		logger.Info("Creating MySQL database")
-		if err := r.mysqlOperation(ctx, create, databaseRequest, nil); err != nil {
-			return fmt.Errorf("mysql db creation failed: %w", err)
+		logger.Info("Creating relational database")
+		if err := r.relationalDatabaseOperation(ctx, create, databaseRequest, nil); err != nil {
+			return fmt.Errorf("%s db creation failed: %w", databaseRequest.Spec.Type, err)
 		}
 		if databaseRequest.Spec.DatabaseConnectionReference == nil {
-			return fmt.Errorf("mysql db creation failed due to missing database connection reference")
+			return fmt.Errorf("%s db creation failed due to missing database connection reference", databaseRequest.Spec.Type)
 		}
 		if databaseRequest.Status.DatabaseInfo == nil {
-			return fmt.Errorf("mysql db creation failed due to missing database info")
+			return fmt.Errorf("%s db creation failed due to missing database info", databaseRequest.Spec.Type)
 		}
-	case postgresType:
-		// handle postgres creation
-		logger.Info("Creating PostgreSQL database")
-	case mongodbType:
-		// handle mongodb creation
+	} else if databaseRequest.Spec.Type == mongodbType {
 		logger.Info("Creating MongoDB database")
-	default:
+	} else {
 		// this should never happen, but just in case
 		logger.Error(ErrInvalidDatabaseType, "Unsupported database type", "type", databaseRequest.Spec.Type)
 		return fmt.Errorf("failed to create database: %w", ErrInvalidDatabaseType)
@@ -586,51 +576,56 @@ func dbInfoFromSeed(secret *v1.Secret) (*dbInfo, error) {
 	return info, nil
 }
 
-// mysqlOperation performs the MySQL operations create and drop
-func (r *DatabaseRequestReconciler) mysqlOperation(
+// relationalDatabaseOperation performs the relational database operations to create, drop and get database information
+func (r *DatabaseRequestReconciler) relationalDatabaseOperation(
 	ctx context.Context,
 	operation string,
 	databaseRequest *crdv1alpha1.DatabaseRequest,
 	databaseInfo *dbInfo,
 ) error {
-	log.FromContext(ctx).Info("Performing MySQL operation", "operation", operation)
+	log.FromContext(ctx).Info("Performing relational database operation", "operation", operation)
 
 	// get the database provider, for info and drop we use the reference which is already set on the database request
 	// if not we error out.
 	// For create we list all database providers and check if the scope matches and if
 	// there are more than one provider with the same scope, we select the one with lower load.
-	databaseProvider := &crdv1alpha1.DatabaseMySQLProvider{}
+	databaseProvider := &crdv1alpha1.RelationalDatabaseProvider{}
 	connectionName := ""
 	if operation == create {
 		var err error
-		databaseProvider, connectionName, err = r.findMySQLProvider(ctx, databaseRequest)
+		databaseProvider, connectionName, err = r.findRelationalDatabaseProvider(ctx, databaseRequest)
 		if err != nil {
-			return fmt.Errorf("mysql db operation %s failed to find database provider: %w", operation, err)
+			return fmt.Errorf(
+				"%s db operation %s failed to find database provider: %w", databaseRequest.Spec.Type, operation, err)
 		}
-		log.FromContext(ctx).Info("Found MySQL provider", "provider", databaseProvider.Name, "connection", connectionName)
+		log.FromContext(ctx).Info(
+			"Found relational database provider", "provider", databaseProvider.Name, "connection", connectionName)
 	} else {
 		if databaseRequest.Spec.DatabaseConnectionReference == nil {
-			return fmt.Errorf("mysql db operation %s failed due to missing database connection reference", operation)
+			return fmt.Errorf(
+				"%s db operation %s failed due to missing database connection reference", databaseRequest.Spec.Type, operation)
 		}
 		if err := r.Get(ctx, client.ObjectKey{
 			Name: databaseRequest.Spec.DatabaseConnectionReference.DatabaseObjectReference.Name,
 		}, databaseProvider); err != nil {
-			return fmt.Errorf("mysql db operation %s failed to get database provider: %w", operation, err)
+			return fmt.Errorf(
+				"%s db operation %s failed to get database provider: %w", databaseRequest.Spec.Type, operation, err)
 		}
 		connectionName = databaseRequest.Spec.DatabaseConnectionReference.Name
-		log.FromContext(ctx).Info("Found MySQL provider", "provider", databaseProvider.Name, "connection", connectionName)
+		log.FromContext(ctx).Info(
+			"Found relational database provider", "provider", databaseProvider.Name, "connection", connectionName)
 	}
 
-	var connection *crdv1alpha1.MySQLConnection
-	for _, c := range databaseProvider.Spec.MySQLConnections {
-		log.FromContext(ctx).Info("Checking MySQL provider database connection", "connection", c.Name)
+	var connection *crdv1alpha1.Connection
+	for _, c := range databaseProvider.Spec.Connections {
+		log.FromContext(ctx).Info("Checking relational database provider database connection", "connection", c.Name)
 		if c.Name == connectionName {
 			conn := c          // Create a new variable and assign the value of c to it
 			connection = &conn // Assign the address of the new variable to connection
 		}
 	}
 	if connection == nil {
-		return fmt.Errorf("mysql db operation %s failed to find database connection", operation)
+		return fmt.Errorf("%s db operation %s failed to find database connection", databaseRequest.Spec.Type, operation)
 	}
 
 	secret := &v1.Secret{}
@@ -638,15 +633,17 @@ func (r *DatabaseRequestReconciler) mysqlOperation(
 		Name:      connection.PasswordSecretRef.Name,
 		Namespace: connection.PasswordSecretRef.Namespace,
 	}, secret); err != nil {
-		return fmt.Errorf("mysql db operation %s failed to get connection password from secret: %w", operation, err)
+		return fmt.Errorf(
+			"%s db operation %s failed to get connection password from secret: %w", databaseRequest.Spec.Type, operation, err)
 	}
 
 	password := string(secret.Data["password"])
 	if password == "" {
-		return fmt.Errorf("mysql db operation %s failed due to empty password", operation)
+		return fmt.Errorf("%s db operation %s failed due to empty password", databaseRequest.Spec.Type, operation)
 	}
 
-	conn := mySQLConn{
+	conn := reldbConn{
+		dbType:   databaseRequest.Spec.Type,
 		name:     connection.Name,
 		hostname: connection.Hostname,
 		username: connection.Username,
@@ -656,15 +653,16 @@ func (r *DatabaseRequestReconciler) mysqlOperation(
 
 	switch operation {
 	case create:
-		log.FromContext(ctx).Info("Creating MySQL database", "database", databaseRequest.Name)
-		info, err := r.MySQLClient.CreateDatabase(
+		log.FromContext(ctx).Info("Creating relational database", "database", databaseRequest.Name)
+		info, err := r.RelationalDatabaseClient.CreateDatabase(
 			ctx,
 			conn.getDSN(),
 			databaseRequest.Name,
 			databaseRequest.Namespace,
+			databaseRequest.Spec.Type,
 		)
 		if err != nil {
-			return fmt.Errorf("mysql db operation %s failed: %w", operation, err)
+			return fmt.Errorf("%s db operation %s failed: %w", databaseRequest.Spec.Type, operation, err)
 		}
 		dbRef := &crdv1alpha1.DatabaseConnectionReference{
 			Name: connection.Name,
@@ -681,39 +679,44 @@ func (r *DatabaseRequestReconciler) mysqlOperation(
 			Databasename: info.Dbname,
 		}
 		if err := r.Status().Update(ctx, databaseRequest); err != nil {
-			return fmt.Errorf("mysql db operation %s failed to update database request: %w", operation, err)
+			return fmt.Errorf(
+				"%s db operation %s failed to update database request: %w", databaseRequest.Spec.Type, operation, err)
 		}
 		databaseRequest.Spec.DatabaseConnectionReference = dbRef
 		return nil
 	case drop:
-		if err := r.MySQLClient.DropDatabase(
+		if err := r.RelationalDatabaseClient.DropDatabase(
 			ctx,
 			conn.getDSN(),
 			databaseRequest.Name,
 			databaseRequest.Namespace,
+			databaseRequest.Spec.Type,
 		); err != nil {
-			return fmt.Errorf("mysql db opration %s failed: %w", operation, err)
+			return fmt.Errorf("%s db opration %s failed: %w", databaseRequest.Spec.Type, operation, err)
 		}
 		databaseRequest.Status.ObservedDatabaseConnectionReference = nil
 		if err := r.Status().Update(ctx, databaseRequest); err != nil {
-			return fmt.Errorf("mysql db operation %s failed to update database request: %w", operation, err)
+			return fmt.Errorf(
+				"%s db operation %s failed to update database request: %w", databaseRequest.Spec.Type, operation, err)
 		}
 		databaseRequest.Spec.DatabaseConnectionReference = nil
 		return nil
 	case info:
 		// check if the dbInfo is not nil
 		if databaseInfo == nil {
-			return fmt.Errorf("mysql db operation %s failed due to missing dbInfo", operation)
+			return fmt.Errorf("%s db operation %s failed due to missing dbInfo", databaseRequest.Spec.Type, operation)
 		}
 		// get the database information
-		info, err := r.MySQLClient.GetDatabase(
+		info, err := r.RelationalDatabaseClient.GetDatabase(
 			ctx,
 			conn.getDSN(),
 			databaseRequest.Name,
 			databaseRequest.Namespace,
+			databaseRequest.Spec.Type,
 		)
 		if err != nil {
-			return fmt.Errorf("mysql db operation %s failed to get database information: %w", operation, err)
+			return fmt.Errorf(
+				"%s db operation %s failed to get database information: %w", databaseRequest.Spec.Type, operation, err)
 		}
 		databaseInfo.userName = info.Username
 		databaseInfo.password = info.Password
@@ -722,30 +725,32 @@ func (r *DatabaseRequestReconciler) mysqlOperation(
 		databaseInfo.port = conn.port
 		return nil
 	default:
-		return fmt.Errorf("mysql db operation %s failed due to invalid operation", operation)
+		return fmt.Errorf("%s db operation %s failed due to invalid operation", databaseRequest.Spec.Type, operation)
 	}
 }
 
-// findMySQLProvider finds the MySQL provider with the same scope and the lower load
+// findRelationalDatabaseProvider finds the relational database provider with the same scope and the lower load
 // returns the provider, connection name and an error
-func (r *DatabaseRequestReconciler) findMySQLProvider(
+func (r *DatabaseRequestReconciler) findRelationalDatabaseProvider(
 	ctx context.Context,
 	databaseRequest *crdv1alpha1.DatabaseRequest,
-) (*crdv1alpha1.DatabaseMySQLProvider, string, error) {
-	dbProviders := &crdv1alpha1.DatabaseMySQLProviderList{}
+) (*crdv1alpha1.RelationalDatabaseProvider, string, error) {
+	dbProviders := &crdv1alpha1.RelationalDatabaseProviderList{}
 	if err := r.List(ctx, dbProviders); err != nil {
-		return nil, "", fmt.Errorf("mysql db find provider failed to list database providers: %w", err)
+		return nil, "", fmt.Errorf("%s db find provider failed to list database providers: %w",
+			databaseRequest.Spec.Type, err,
+		)
 	}
 
 	// find the provider with the same scope
 	// set load to the max int value to find the provider with the lower
 	load := int(^uint(0) >> 1)
-	var provider *crdv1alpha1.DatabaseMySQLProvider
+	var provider *crdv1alpha1.RelationalDatabaseProvider
 	var connName string
 	for _, dbProvider := range dbProviders.Items {
-		if dbProvider.Spec.Scope == databaseRequest.Spec.Scope {
-			log.FromContext(ctx).Info("Found MySQL provider", "provider", dbProvider.Name)
-			for _, dbConnection := range dbProvider.Spec.MySQLConnections {
+		if dbProvider.Spec.Scope == databaseRequest.Spec.Scope && dbProvider.Spec.Type == databaseRequest.Spec.Type {
+			log.FromContext(ctx).Info("Found provider", "provider", dbProvider.Name)
+			for _, dbConnection := range dbProvider.Spec.Connections {
 				if dbConnection.Enabled {
 					// fetch the password from the secret
 					secret := &v1.Secret{}
@@ -753,15 +758,18 @@ func (r *DatabaseRequestReconciler) findMySQLProvider(
 						Name:      dbConnection.PasswordSecretRef.Name,
 						Namespace: dbConnection.PasswordSecretRef.Namespace,
 					}, secret); err != nil {
-						return nil, "", fmt.Errorf("mysql db find provider failed to get connection password from secret: %w", err)
+						return nil, "", fmt.Errorf("%s db find provider failed to get connection password from secret: %w",
+							databaseRequest.Spec.Type, err,
+						)
 					}
 
 					password := string(secret.Data["password"])
 					if password == "" {
-						return nil, "", errors.New("mysql db find provider failed due to empty password")
+						return nil, "", fmt.Errorf("%s db find provider failed due to empty password", databaseRequest.Spec.Type)
 					}
 
-					conn := mySQLConn{
+					conn := reldbConn{
+						dbType:   databaseRequest.Spec.Type,
 						name:     dbConnection.Name,
 						hostname: dbConnection.Hostname,
 						username: dbConnection.Username,
@@ -771,17 +779,17 @@ func (r *DatabaseRequestReconciler) findMySQLProvider(
 
 					// check the load of the provider connection
 					// we select the provider with the lower load
-					log.FromContext(ctx).Info("Checking MySQL provider database connection", "connection", dbConnection.Name)
-					dbLoad, err := r.MySQLClient.Load(ctx, conn.getDSN())
+					log.FromContext(ctx).Info("Checking provider database connection", "connection", dbConnection.Name)
+					dbLoad, err := r.RelationalDatabaseClient.Load(ctx, conn.getDSN(), databaseRequest.Spec.Type)
 					if err != nil {
-						return nil, "", fmt.Errorf("mysql db find provider failed to get load: %w", err)
+						return nil, "", fmt.Errorf("%s db find provider failed to get load: %w", databaseRequest.Spec.Type, err)
 					}
 					if dbLoad < load {
 						p := dbProvider
 						provider = &p
 						connName = dbConnection.Name
 						load = dbLoad
-						log.FromContext(ctx).Info("Found MySQL provider", "provider",
+						log.FromContext(ctx).Info("Found relational database provider", "provider",
 							dbProvider.Name, "connection", dbConnection.Name, "load", dbLoad)
 					}
 				}
@@ -789,54 +797,56 @@ func (r *DatabaseRequestReconciler) findMySQLProvider(
 		}
 	}
 	if provider == nil {
-		return nil, "", errors.New("mysql db find provider failed due to provider not found")
+		return nil, "", fmt.Errorf("%s db find provider failed due to provider not found", databaseRequest.Spec.Type)
 	}
 	return provider, connName, nil
 }
 
-// mysqlDeletion deletes the MySQL database
-func (r *DatabaseRequestReconciler) mysqlDeletion(
+// relDBDeletion deletes the relational database
+func (r *DatabaseRequestReconciler) relDBDeletion(
 	ctx context.Context,
 	databaseRequest *crdv1alpha1.DatabaseRequest,
 ) error {
-	log.FromContext(ctx).Info("Deleting MySQL database")
+	log.FromContext(ctx).Info("Deleting relational database")
 
 	// check the status to find the object reference to the database provider
 	if databaseRequest.Spec.DatabaseConnectionReference == nil {
 		// if there is no reference, we can't delete the database.
-		return errors.New("mysql db drop failed due to connection reference is missing")
+		return errors.New("relational db drop failed due to connection reference is missing")
 	}
-	return r.mysqlOperation(ctx, drop, databaseRequest, nil)
+	return r.relationalDatabaseOperation(ctx, drop, databaseRequest, nil)
 }
 
-// mysqlInfo retrieves the MySQL database information
-func (r *DatabaseRequestReconciler) mysqlInfo(
+// relDBInfo retrieves the relational database information
+func (r *DatabaseRequestReconciler) relDBInfo(
 	ctx context.Context,
 	databaseRequest *crdv1alpha1.DatabaseRequest,
 ) (*dbInfo, error) {
-	log.FromContext(ctx).Info("Retrieving MySQL database information")
+	log.FromContext(ctx).Info("Retrieving relational database information")
 
-	dbInfo := &dbInfo{}
-	if err := r.mysqlOperation(ctx, info, databaseRequest, dbInfo); err != nil {
-		return nil, fmt.Errorf("mysql db info failed: %w", err)
+	dbInfo := dbInfo{}
+	if err := r.relationalDatabaseOperation(ctx, info, databaseRequest, &dbInfo); err != nil {
+		return nil, fmt.Errorf("relational db info failed: %w", err)
 	}
-	return dbInfo, nil
+	return &dbInfo, nil
 }
 
-// mysqlTestConnection tests the MySQL connection
-func (r *DatabaseRequestReconciler) mysqlTestConnection(
+// relDBTestConnection tests a mysql or postgres connection
+func (r *DatabaseRequestReconciler) relDBTestConnection(
 	ctx context.Context,
 	dbi *dbInfo,
+	dbType string,
 ) error {
-	log.FromContext(ctx).Info("Testing MySQL connection")
-	conn := mySQLConn{
+	log.FromContext(ctx).Info("Testing relational database connection connection")
+	conn := reldbConn{
+		dbType:   dbType,
 		hostname: dbi.hostName,
 		username: dbi.userName,
 		password: dbi.password,
 		port:     dbi.port,
 	}
-	if err := r.MySQLClient.Ping(ctx, conn.getDSN()); err != nil {
-		return fmt.Errorf("mysql test connection failed: %w", err)
+	if err := r.RelationalDatabaseClient.Ping(ctx, conn.getDSN(), dbType); err != nil {
+		return fmt.Errorf("relation database test connection failed: %w", err)
 	}
 	return nil
 }
