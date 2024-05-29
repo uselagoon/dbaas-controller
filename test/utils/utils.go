@@ -65,6 +65,19 @@ func InstallRelationalDatabases() error {
 	return nil
 }
 
+// InstallMongoDB installs a MongoDB pod to be used for testing.
+func InstallMongoDB() error {
+	dir, err := GetProjectDir()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("kubectl", "apply", "-f", "test/e2e/testdata/mongodb.yaml")
+	cmd.Dir = dir
+	fmt.Fprintf(GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
+	_, err = Run(cmd)
+	return err
+}
+
 // UninstallRelationalDatabases uninstalls both MySQL and PostgreSQL pods.
 func UninstallRelationalDatabases() {
 	dir, err := GetProjectDir()
@@ -85,6 +98,19 @@ func UninstallRelationalDatabases() {
 		if err := <-errChan; err != nil {
 			warnError(err)
 		}
+	}
+}
+
+// UninstallMongoDB uninstalls the MongoDB pod.
+func UninstallMongoDB() {
+	dir, err := GetProjectDir()
+	if err != nil {
+		warnError(err)
+	}
+	cmd := exec.Command("kubectl", "delete", "-f", "test/e2e/testdata/mongodb.yaml")
+	cmd.Dir = dir
+	if _, err := Run(cmd); err != nil {
+		warnError(err)
 	}
 }
 

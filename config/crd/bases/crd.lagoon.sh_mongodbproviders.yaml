@@ -4,21 +4,20 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.14.0
-  name: relationaldatabaseproviders.crd.lagoon.sh
+  name: mongodbdproviders.crd.lagoon.sh
 spec:
   group: crd.lagoon.sh
   names:
-    kind: RelationalDatabaseProvider
-    listKind: RelationalDatabaseProviderList
-    plural: relationaldatabaseproviders
-    singular: relationaldatabaseprovider
-  scope: Cluster
+    kind: MongoDBDProvider
+    listKind: MongoDBDProviderList
+    plural: mongodbdproviders
+    singular: mongodbdprovider
+  scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: RelationalDatabaseProvider is the Schema for the relationaldatabaseprovider
-          API
+        description: MongoDBDProvider is the Schema for the mongodbproviders API
         properties:
           apiVersion:
             description: |-
@@ -38,15 +37,38 @@ spec:
           metadata:
             type: object
           spec:
-            description: RelationalDatabaseProviderSpec defines the desired state
-              of RelationalDatabaseProvider
+            description: MongoDBProviderSpec defines the desired state of MongoDBProvider
             properties:
               connections:
                 description: Connections defines the connection to a relational database
                 items:
-                  description: Connection defines the connection to a relational database
-                    like MySQL or PostgreSQL
                   properties:
+                    auth:
+                      description: Auth is the authentication mechanism for the MongoDB
+                        connection
+                      properties:
+                        mechanism:
+                          description: |-
+                            Mechanism is the authentication mechanism for the MongoDB connection
+                            https://www.mongodb.com/docs/drivers/go/current/fundamentals/auth/#std-label-golang-authentication-mechanisms
+                          enum:
+                          - SCRAM-SHA-1
+                          - SCRAM-SHA-256
+                          - MONGODB-CR
+                          - MongoDB-AWS
+                          - X509
+                          type: string
+                        source:
+                          description: Source is the source of the authentication
+                            mechanism for the MongoDB connection
+                          type: string
+                        tls:
+                          description: TLS is the flag to enable or disable TLS for
+                            the MongoDB connection
+                          type: boolean
+                      required:
+                      - mechanism
+                      type: object
                     enabled:
                       default: true
                       description: Enabled is a flag to enable or disable the relational
@@ -57,10 +79,10 @@ spec:
                       type: string
                     name:
                       description: |-
-                        Name is the name of the relational database like MySQL or PostgreSQL connection
+                        Name is the name of the MongoDB connection
                         it is used to identify the connection. Please use a unique name
-                        for each connection. This field will be used in the DatabaseRequest
-                        to reference the connection. The relationaldatabaseprovider controller will
+                        for each connection. This field will be used in the MongoDBProvider
+                        to reference the connection. The MongoDBProvider controller will
                         error if the name is not unique.
                       type: string
                     passwordSecretRef:
@@ -78,6 +100,7 @@ spec:
                       type: object
                       x-kubernetes-map-type: atomic
                     port:
+                      default: 27017
                       description: Port is the port of the relational database
                       maximum: 65535
                       minimum: 1
@@ -89,14 +112,14 @@ spec:
                         type: string
                       type: array
                     username:
+                      default: root
                       description: Username is the username of the relational database
                       type: string
                   required:
+                  - auth
                   - hostname
                   - name
                   - passwordSecretRef
-                  - port
-                  - username
                   type: object
                 minItems: 1
                 type: array
@@ -110,22 +133,12 @@ spec:
                 - development
                 - custom
                 type: string
-              type:
-                description: |-
-                  Type is the type of the relational database provider
-                  it can be either "mysql" or "postgres"
-                enum:
-                - mysql
-                - postgres
-                type: string
             required:
             - connections
             - scope
-            - type
             type: object
           status:
-            description: RelationalDatabaseProviderStatus defines the observed state
-              of RelationalDatabaseProvider
+            description: MongoDBProviderStatus defines the observed state of MongoDBProvider
             properties:
               conditions:
                 description: Conditions defines the status conditions

@@ -1,0 +1,19 @@
+apiVersion: crd.lagoon.sh/v1alpha1
+kind: MongoDBProvider
+metadata:
+  labels:
+    app.kubernetes.io/name: dbaas-controller
+    app.kubernetes.io/managed-by: kustomize
+  name: mongodbprovider-sample
+spec:
+  scope: development
+  connections:
+    - name: primary-test-mongodb-connection
+      hostname: mongodb-service.mongodb
+      passwordSecretRef:
+        name: mongodb-secret
+        namespace: mongodb
+      port: 27017
+      username: mongodb
+      auth:
+        mechanism: SCRAM-SHA-1

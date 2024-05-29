@@ -40,6 +40,9 @@ var _ = Describe("controller", Ordered, func() {
 		By("installing relational databases pods")
 		Expect(utils.InstallRelationalDatabases()).To(Succeed())
 
+		By("installing mongodb pods")
+		Expect(utils.InstallMongoDB()).To(Succeed())
+
 		By("creating manager namespace")
 		cmd := exec.Command("kubectl", "create", "ns", namespace)
 		_, _ = utils.Run(cmd)
@@ -53,7 +56,7 @@ var _ = Describe("controller", Ordered, func() {
 		utils.UninstallCertManager()
 
 		By("removing the RelationalDatabaseProvider resource")
-		for _, name := range []string{"mysql", "postgres"} {
+		for _, name := range []string{"mysql", "postgres", "mongodb"} {
 			cmd := exec.Command(
 				"kubectl",
 				"patch",
@@ -70,7 +73,7 @@ var _ = Describe("controller", Ordered, func() {
 			_, _ = utils.Run(cmd)
 		}
 		By("removing the DatabaseRequest resource")
-		for _, name := range []string{"mysql", "postgres"} {
+		for _, name := range []string{"mysql", "postgres", "mongodb"} {
 			cmd := exec.Command(
 				"kubectl",
 				"patch",
@@ -93,8 +96,11 @@ var _ = Describe("controller", Ordered, func() {
 		By("uninstalling relational databases pods")
 		utils.UninstallRelationalDatabases()
 
+		By("uninstalling mongodb pods")
+		utils.UninstallMongoDB()
+
 		By("removing service and secret")
-		for _, name := range []string{"mysql", "postgres"} {
+		for _, name := range []string{"mysql", "postgres", "mongodb"} {
 			cmd = exec.Command(
 				"kubectl", "delete", "service", "-n", "default", "-l", "app.kubernetes.io/instance=databaserequest-"+name+"-sample")
 			_, _ = utils.Run(cmd)
