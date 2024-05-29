@@ -9,13 +9,13 @@ It allows for provisiong and deprovisioning of shared MySQL/MariaDB, PostgreSQL,
 ## Current Status of the Project
 
 WIP - Work in Progress
-There is still a lot of work to be done on this project. The current status is that the controller is able to provision and deprovision MySQL databases. But there is still a lot of work to be done to make it production ready.
+There is still a some work to be done on this project. The current status is that the controller is able to provision and deprovision MySQL databases. But there is still a lot of work to be done to make it production ready.
 
 - [x] Setup e2e tests
 - [x] Provision MySQL databases (basic) - no support for additional users, seeding, etc.
 - [x] Deprovision MySQL databases
-- [ ] Provision PostgreSQL databases
-- [ ] Deprovision PostgreSQL databases
+- [x] Provision PostgreSQL databases
+- [x] Deprovision PostgreSQL databases
 - [ ] Provision MongoDB databases
 - [ ] Deprovision MongoDB databases
 - [ ] Plan to migrate from old `dbaaas-operator` to `dbaas-controller`
@@ -58,8 +58,8 @@ Key Features:
 
 To interact with the dbaas-controller, the following CRDs are introduced:
 
-- DatabaseXProvider
-    - This CRD is used to define a database provider, such as MySQL, PostgreSQL, or MongoDB.
+- RelationalDatabaseProvider
+    - This CRD is used to define a database provider, such as MySQL and PostgreSQL.
 - DatabaseRequest
 - DatabaseMigration
 
@@ -67,48 +67,50 @@ Basic usage of the CRs in combination with the dbaas-controller is outlined belo
 
 - DatabaseRequest: Lagoon creates a DatabaseRequest CR to request a database instance
     - The dbaas-controller processes the request and provisions the database instance based on the request
-    - The controller uses the relevant DatabaseXProvider CR to determine how it should provision the database
+    - The controller uses the relevant RelationalDatabaseProvider CR to determine how it should provision the database
 
-## DatabaseMySQLProvider CRD Documentation
+## RelationalDatabaseProvider CRD Documentation
 
-The `DatabaseMySQLProvider` CRD defines a Kubernetes-native way to manage MySQL database connections and configurations. This custom resource allows to define MySQL databases.
+The `RelationalDatabaseProvider` CRD defines a Kubernetes-native way to manage relational database connections and configurations. This custom resource allows to define MySQL and PostgreSQL databases.
 
-Use the status mysqlConnectionStatus field to check the status of the MySQL connections defined in the spec.
+Use the status connectionStatus field to check the status of the MySQL connections defined in the spec.
 
-### DatabaseMySQLProvider Spec Fields
+### RelationalDatabaseProvider Spec Fields
 
+- kind (required): The type of database provider, which can be either mysql or postgresql.
 - scope (required): Defines the scope of the database request, which influences the environment setup. Valid values are production, development, and custom. Defaults to development if not specified.
-- mysqlConnections (required): A list of `MySQLConnection` objects that detail the connection parameters to MySQL databases. At least one connection must be defined.
+- connections (required): A list of `connection` objects that detail the connection parameters to MySQL or PostgreSQL databases. At least one connection must be defined.
 
-- MySQLConnection Fields
-    - name (required): A unique name for the MySQL database connection, used to identify and reference the connection in database requests.
-    - hostname (required): The hostname of the MySQL database server.
-    - replicaHostnames (optional): A list of hostnames for the MySQL replica databases.
+- connection Fields
+    - name (required): A unique name for the MySQL or PostgreSQL database connection, used to identify and reference the connection in database requests.
+    - hostname (required): The hostname of the MySQL or PostgreSQL database server.
+    - replicaHostnames (optional): A list of hostnames for the MySQLi or PostgreSQL replica databases.
     - passwordSecretRef (required): A reference to a Kubernetes Secret containing the password for the database connection.
-    - port (required): The port on which the MySQL database server is listening. Must be between 1 and 65535.
-    - username (required): The username for logging into the MySQL database.
+    - port (required): The port on which the MySQLi or PostgreSQL database server is listening. Must be between 1 and 65535.
+    - username (required): The username for logging into the MySQLi or PostgreSQL database.
     - enabled (required): A flag indicating whether this database connection is enabled. Defaults to true.
 
-### DatabaseMySQLProvider Status Fields
+### RelationalDatabaseProvider Status Fields
 
-- conditions: Provides detailed conditions of the MySQLProvider like readiness, errors, etc.
-- mysqlConnectionStatus: A list of statuses for the MySQL connections defined in the spec.
+- conditions: Provides detailed conditions of the `RelationalDatabaseProvider` like readiness, errors, etc.
+- connectionStatus: A list of statuses for the MySQL or PostgreSQL connections defined in the spec.
 
-- MySQLConnectionStatus Fields
-    - hostname (required): The hostname of the MySQL database server.
-    - mysqlVersion (required): The version of the MySQL server.
+- connectionStatus Fields
+    - hostname (required): The hostname of the MySQL or PostgreSQL database server.
+    - mysqlVersion (required): The version of the MySQL or PostgreSQL server.
     - enabled (required): Indicates if the database connection is enabled.
     - status (required): The current status of the database connection, with valid values being available and unavailable.
-- observedGeneration: Reflects the generation of the most recently observed DatabaseMySQLProvider object.
+- observedGeneration: Reflects the generation of the most recently observed RelationalDatabaseProvider object.
 
-### DatabaseMySQLProvider Example
+### RelationalDatabaseProvider Example
 
 ```yaml
 apiVersion: v1alpha1
-kind: DatabaseMySQLProvider
+kind: RelationalDatabaseProvider
 metadata:
   name: example-mysql-provider
 spec:
+  kind: mysql
   scope: development
   mysqlConnections:
     - name: primary-db

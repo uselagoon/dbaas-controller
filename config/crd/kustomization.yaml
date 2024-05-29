@@ -3,20 +3,20 @@
 # It should be run by config/default
 resources:
 - bases/crd.lagoon.sh_databaserequests.yaml
-- bases/crd.lagoon.sh_databasemysqlproviders.yaml
+- bases/crd.lagoon.sh_relationaldatabaseproviders.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patches:
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
 # patches here are for enabling the conversion webhook for each CRD
 #- path: patches/webhook_in_databaserequests.yaml
-#- path: patches/webhook_in_databasemysqlproviders.yaml
+#- path: patches/webhook_in_relationaldatabaseproviders.yaml
 #+kubebuilder:scaffold:crdkustomizewebhookpatch
 
 # [CERTMANAGER] To enable cert-manager, uncomment all the sections with [CERTMANAGER] prefix.
 # patches here are for enabling the CA injection for each CRD
 #- path: patches/cainjection_in_databaserequests.yaml
-#- path: patches/cainjection_in_databasemysqlproviders.yaml
+#- path: patches/cainjection_in_relationaldatabaseproviders.yaml
 #+kubebuilder:scaffold:crdkustomizecainjectionpatch
 
 # [WEBHOOK] To enable webhook, uncomment the following section

@@ -4,20 +4,20 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.14.0
-  name: databasemysqlproviders.crd.lagoon.sh
+  name: relationaldatabaseproviders.crd.lagoon.sh
 spec:
   group: crd.lagoon.sh
   names:
-    kind: DatabaseMySQLProvider
-    listKind: DatabaseMySQLProviderList
-    plural: databasemysqlproviders
-    singular: databasemysqlprovider
+    kind: RelationalDatabaseProvider
+    listKind: RelationalDatabaseProviderList
+    plural: relationaldatabaseproviders
+    singular: relationaldatabaseprovider
   scope: Cluster
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: DatabaseMySQLProvider is the Schema for the databasemysqlproviders
+        description: RelationalDatabaseProvider is the Schema for the relationaldatabaseprovider
           API
         properties:
           apiVersion:
@@ -38,27 +38,29 @@ spec:
           metadata:
             type: object
           spec:
-            description: DatabaseMySQLProviderSpec defines the desired state of DatabaseMySQLProvider
+            description: RelationalDatabaseProviderSpec defines the desired state
+              of RelationalDatabaseProvider
             properties:
-              mysqlConnections:
-                description: MySQLConnections defines the connection to a MySQL database
+              connections:
+                description: Connections defines the connection to a relational database
                 items:
-                  description: MySQLConnection defines the connection to a MySQL database
+                  description: Connection defines the connection to a relational database
+                    like MySQL or PostgreSQL
                   properties:
                     enabled:
                       default: true
-                      description: Enabled is a flag to enable or disable the MySQL
+                      description: Enabled is a flag to enable or disable the relational
                         database
                       type: boolean
                     hostname:
-                      description: Hostname is the hostname of the MySQL database
+                      description: Hostname is the hostname of the relational database
                       type: string
                     name:
                       description: |-
-                        Name is the name of the MySQL database connection
+                        Name is the name of the relational database like MySQL or PostgreSQL connection
                         it is used to identify the connection. Please use a unique name
                         for each connection. This field will be used in the DatabaseRequest
-                        to reference the connection. The databasemysqlprovider controller will
+                        to reference the connection. The relationaldatabaseprovider controller will
                         error if the name is not unique.
                       type: string
                     passwordSecretRef:
@@ -76,18 +78,18 @@ spec:
                       type: object
                       x-kubernetes-map-type: atomic
                     port:
-                      description: Port is the port of the MySQL database
+                      description: Port is the port of the relational database
                       maximum: 65535
                       minimum: 1
                       type: integer
                     replicaHostnames:
                       description: ReplicaHostnames is the list of hostnames of the
-                        MySQL database replicas
+                        relational database replicas
                       items:
                         type: string
                       type: array
                     username:
-                      description: Username is the username of the MySQL database
+                      description: Username is the username of the relational database
                       type: string
                   required:
                   - enabled
@@ -109,13 +111,22 @@ spec:
                 - development
                 - custom
                 type: string
+              type:
+                description: |-
+                  Type is the type of the relational database provider
+                  it can be either "mysql" or "postgres"
+                enum:
+                - mysql
+                - postgres
+                type: string
             required:
-            - mysqlConnections
+            - connections
             - scope
+            - type
             type: object
           status:
-            description: DatabaseMySQLProviderStatus defines the observed state of
-              DatabaseMySQLProvider
+            description: RelationalDatabaseProviderStatus defines the observed state
+              of RelationalDatabaseProvider
             properties:
               conditions:
                 description: Conditions defines the status conditions
@@ -187,41 +198,42 @@ spec:
                   - type
                   type: object
                 type: array
-              mysqlConnectionStatus:
-                description: MySQLConnectionStatus provides the status of the MySQL
+              connectionStatus:
+                description: ConnectionStatus provides the status of the relational
                   database
                 items:
-                  description: MySQLConnectionStatus defines the status of a MySQL
+                  description: ConnectionStatus defines the status of a relational
                     database connection
                   properties:
+                    databaseVersion:
+                      description: DatabaseVersion is the version of the relational
+                        database
+                      type: string
                     enabled:
                       description: Enabled is a flag to indicate whether a MySQL database
                         is enabled or not
                       type: boolean
                     hostname:
-                      description: Hostname is the hostname of the MySQL database
-                      type: string
-                    mysqlVersion:
-                      description: MySQLVersion is the version of the MySQL database
+                      description: Hostname is the hostname of the relational database
                       type: string
                     name:
                       description: |-
-                        Name is the name of the MySQL database connection
+                        Name is the name of the relational database connection
                         it is used to identify the connection. Please use a unique name
                         for each connection. This field will be used in the DatabaseRequest
-                        to reference the connection. The databasemysqlprovider controller will
+                        to reference the connection. The relationaldatabaseprovider controller will
                         error if the name is not unique.
                       type: string
                     status:
-                      description: Status is the status of the MySQL database
+                      description: Status is the status of the relational database
                       enum:
                       - available
                       - unavailable
                       type: string
                   required:
+                  - databaseVersion
                   - enabled
                   - hostname
-                  - mysqlVersion
                   - name
                   - status
                   type: object

@@ -3,11 +3,11 @@ kind: DatabaseRequest
 metadata:
   labels:
     app.kubernetes.io/name: databaserequest
-    app.kubernetes.io/instance: databaserequest-sample
+    app.kubernetes.io/instance: databaserequest-mysql-sample
     app.kubernetes.io/part-of: dbaas-controller
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/created-by: dbaas-controller
-  name: databaserequest-sample
+  name: databaserequest-mysql-sample
 spec:
   name: first-mysql-db
   scope: development

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: postgres-init-pod
+  namespace: postgres
+spec:
+  restartPolicy: Never
+  containers:
+  - name: postgres-client
+    image: postgres:13
+    command: ["sh", "-c"]
+    args:
+    - |
+      PGPASSWORD=e2e-postgres-password psql -h postgres-service.postgres -U postgres -c "CREATE DATABASE IF NOT EXISTS seed-database;"

@@ -1,31 +1,27 @@
-# permissions for end users to edit databasemysqlproviders.
+# permissions for end users to view relationaldatabaseproviders.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/name: clusterrole
-    app.kubernetes.io/instance: databasemysqlprovider-editor-role
+    app.kubernetes.io/instance: relationaldatabaseprovider-viewer-role
     app.kubernetes.io/component: rbac
     app.kubernetes.io/created-by: dbaas-controller
     app.kubernetes.io/part-of: dbaas-controller
     app.kubernetes.io/managed-by: kustomize
-  name: databasemysqlprovider-editor-role
+  name: relationaldatabaseprovider-viewer-role
 rules:
 - apiGroups:
   - crd.lagoon.sh
   resources:
-  - databasemysqlproviders
+  - relationaldatabaseproviders
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - crd.lagoon.sh
   resources:
-  - databasemysqlproviders/status
+  - relationaldatabaseproviders/status
   verbs:
   - get
