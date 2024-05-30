@@ -278,7 +278,10 @@ func (r *DatabaseRequestReconciler) handleError(
 	return ctrl.Result{}, err
 }
 
-func (r *DatabaseRequestReconciler) handleSeed(ctx context.Context, databaseRequest *crdv1alpha1.DatabaseRequest) (*seedDatabaseInfo, error) {
+func (r *DatabaseRequestReconciler) handleSeed(
+	ctx context.Context,
+	databaseRequest *crdv1alpha1.DatabaseRequest,
+) (*seedDatabaseInfo, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Get seed database info")
 	seedInfo, err := r.relationalDatabaseInfoFromSeed(
@@ -814,7 +817,8 @@ func (r *DatabaseRequestReconciler) relationalDatabaseInfoFromSeed(
 				if dbConnection.Enabled && dbConnection.Hostname == dbInfo.hostName &&
 					dbConnection.Port == dbInfo.port {
 					log.FromContext(ctx).Info("Found provider", "provider", dbProvider.Name)
-					connection = &dbConnection
+					conn := dbConnection
+					connection = &conn
 					databaseProviderRef = &crdv1alpha1.DatabaseConnectionReference{
 						Name: connection.Name,
 						DatabaseObjectReference: v1.ObjectReference{
