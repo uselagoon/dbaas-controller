@@ -41,6 +41,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/uselagoon/dbaas-controller/api/v1alpha1"
 	crdv1alpha1 "github.com/uselagoon/dbaas-controller/api/v1alpha1"
 	"github.com/uselagoon/dbaas-controller/internal/database"
 )
@@ -151,14 +152,16 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	var dbInfo *dbInfo
 	if databaseRequest.Spec.Seed != nil {
-		var err error
-		dbInfo, err = r.seedDatabase(ctx, databaseRequest)
+		seedInfo, err := r.handleSeed(ctx, databaseRequest)
 		if err != nil {
-			return r.handleError(ctx, databaseRequest, "seed-database", err)
+			return r.handleError(ctx, databaseRequest, "handle-seed", err)
 		}
-		if err := r.relDBTestConnection(ctx, dbInfo, databaseRequest.Spec.Type); err != nil {
-			return r.handleError(ctx, databaseRequest, "seed-database-connection", err)
-		}
+		// now let's update the database request with the connection reference
+		databaseRequest.Spec.DatabaseConnectionReference = seedInfo.databaseProviderRef
+		databaseRequest.Status.ObservedDatabaseConnectionReference = databaseRequest.Spec.DatabaseConnectionReference
+		databaseRequest.Spec.Seed = nil
+		dbInfo = seedInfo.dbInfo
+		logger.Info("Seed database setup complete")
 	} else {
 		if databaseRequest.Spec.DatabaseConnectionReference == nil {
 			if err := r.createDatabase(ctx, databaseRequest); err != nil {
@@ -273,6 +276,49 @@ func (r *DatabaseRequestReconciler) handleError(
 	}
 
 	return ctrl.Result{}, err
+}
+
+func (r *DatabaseRequestReconciler) handleSeed(ctx context.Context, databaseRequest *crdv1alpha1.DatabaseRequest) (*seedDatabaseInfo, error) {
+	logger := log.FromContext(ctx)
+	logger.Info("Get seed database info")
+	seedInfo, err := r.relationalDatabaseInfoFromSeed(
+		ctx,
+		databaseRequest.Spec.Seed,
+		databaseRequest.Spec.Type,
+		databaseRequest.Spec.Scope,
+	)
+	if err != nil {
+		return nil, err
+	}
+	logger.Info("Found seed connection", "connectionName", seedInfo.conn.name)
+
+	// if we got a provider connection and db info we set the database info.
+	if err = r.RelationalDatabaseClient.SetDatabaseInfo(
+		ctx,
+		seedInfo.conn.getDSN(),
+		databaseRequest.Name,
+		databaseRequest.Namespace,
+		databaseRequest.Spec.Type,
+		database.RelationalDatabaseInfo{
+			Username: seedInfo.dbInfo.userName,
+			Password: seedInfo.dbInfo.password,
+			Dbname:   seedInfo.dbInfo.database,
+		},
+	); err != nil {
+		return nil, err
+	}
+	logger.Info("Set database info", "username", seedInfo.dbInfo.userName, "database", seedInfo.dbInfo.database)
+	// get rid of the seed secret
+	if err := r.Delete(ctx, &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      databaseRequest.Spec.Seed.Name,
+			Namespace: databaseRequest.Spec.Seed.Namespace,
+		},
+	}); err != nil {
+		return nil, err
+	}
+	logger.Info("Deleted seed secret", "secret", databaseRequest.Spec.Seed.Name)
+	return seedInfo, nil
 }
 
 // handleService creates or updates the service for the database request
@@ -456,16 +502,16 @@ func (r *DatabaseRequestReconciler) createDatabase(
 // seedDatabase returns the database information from the seed secret
 func (r *DatabaseRequestReconciler) seedDatabase(
 	ctx context.Context,
-	databaseRequest *crdv1alpha1.DatabaseRequest,
+	seed *v1.SecretReference,
 ) (*dbInfo, error) {
-	seed := &v1.Secret{}
+	secret := &v1.Secret{}
 	if err := r.Get(ctx, types.NamespacedName{
-		Name:      databaseRequest.Spec.Seed.Name,
-		Namespace: databaseRequest.Spec.Seed.Namespace,
-	}, seed); err != nil {
-		return nil, fmt.Errorf("failed to get seed secret %s: %w", databaseRequest.Spec.Seed.Name, err)
+		Name:      seed.Name,
+		Namespace: seed.Namespace,
+	}, secret); err != nil {
+		return nil, fmt.Errorf("failed to get seed secret %s: %w", seed.Name, err)
 	}
-	return dbInfoFromSeed(seed)
+	return dbInfoFromSeed(secret)
 }
 
 // promLabels returns the prometheus labels for the database request
@@ -707,7 +753,7 @@ func (r *DatabaseRequestReconciler) relationalDatabaseOperation(
 			return fmt.Errorf("%s db operation %s failed due to missing dbInfo", databaseRequest.Spec.Type, operation)
 		}
 		// get the database information
-		info, err := r.RelationalDatabaseClient.GetDatabase(
+		info, err := r.RelationalDatabaseClient.GetDatabaseInfo(
 			ctx,
 			conn.getDSN(),
 			databaseRequest.Name,
@@ -727,6 +773,91 @@ func (r *DatabaseRequestReconciler) relationalDatabaseOperation(
 	default:
 		return fmt.Errorf("%s db operation %s failed due to invalid operation", databaseRequest.Spec.Type, operation)
 	}
+}
+
+// seedDatabaseInfo is a struct to hold the seed database information
+type seedDatabaseInfo struct {
+	dbInfo              *dbInfo
+	conn                *reldbConn
+	databaseProviderRef *v1alpha1.DatabaseConnectionReference
+}
+
+// relationalDatabaseInfoFromSeed finds the relational database provider based on the seed secret
+func (r *DatabaseRequestReconciler) relationalDatabaseInfoFromSeed(
+	ctx context.Context,
+	seed *v1.SecretReference,
+	dbType string,
+	scope string,
+) (*seedDatabaseInfo, error) {
+	dbInfo, err := r.seedDatabase(ctx, seed)
+	if err != nil {
+		return nil, fmt.Errorf("%s db find connection from seed failed to get seed database: %w", dbType, err)
+	}
+
+	// test if the connection works with the seed
+	if err := r.relDBTestConnection(ctx, dbInfo, dbType); err != nil {
+		return nil, fmt.Errorf("%s db find connection from seed failed to test connection: %w", dbType, err)
+	}
+
+	dbProviders := &crdv1alpha1.RelationalDatabaseProviderList{}
+	if err := r.List(ctx, dbProviders); err != nil {
+		return nil, fmt.Errorf("%s db find connection from seed failed to list database providers: %w",
+			dbType, err,
+		)
+	}
+
+	var connection *crdv1alpha1.Connection
+	var databaseProviderRef *v1alpha1.DatabaseConnectionReference
+	for _, dbProvider := range dbProviders.Items {
+		if dbProvider.Spec.Scope == scope && dbProvider.Spec.Type == dbType {
+			for _, dbConnection := range dbProvider.Spec.Connections {
+				if dbConnection.Enabled && dbConnection.Hostname == dbInfo.hostName &&
+					dbConnection.Port == dbInfo.port {
+					log.FromContext(ctx).Info("Found provider", "provider", dbProvider.Name)
+					connection = &dbConnection
+					databaseProviderRef = &crdv1alpha1.DatabaseConnectionReference{
+						Name: connection.Name,
+						DatabaseObjectReference: v1.ObjectReference{
+							Kind:            dbProvider.Kind,
+							Name:            dbProvider.Name,
+							UID:             dbProvider.UID,
+							ResourceVersion: dbProvider.ResourceVersion,
+						},
+					}
+				}
+			}
+		}
+	}
+
+	if connection == nil {
+		return nil, fmt.Errorf("%s db find connection from seed failed due to provider not found", dbType)
+	}
+
+	secret := &v1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      connection.PasswordSecretRef.Name,
+		Namespace: connection.PasswordSecretRef.Namespace,
+	}, secret); err != nil {
+		return nil, fmt.Errorf("%s db find connection from seed failed to get connection password from secret: %w",
+			dbType, err,
+		)
+	}
+
+	password := string(secret.Data["password"])
+	if password == "" {
+		return nil, fmt.Errorf("%s db find connection from seed failed due to empty password", dbType)
+	}
+
+	conn := &reldbConn{
+		dbType:   dbType,
+		name:     connection.Name,
+		hostname: connection.Hostname,
+		username: connection.Username,
+		password: password,
+		port:     connection.Port,
+	}
+
+	return &seedDatabaseInfo{dbInfo: dbInfo, conn: conn, databaseProviderRef: databaseProviderRef}, nil
 }
 
 // findRelationalDatabaseProvider finds the relational database provider with the same scope and the lower load

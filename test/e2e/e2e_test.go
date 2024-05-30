@@ -261,6 +261,14 @@ var _ = Describe("controller", Ordered, func() {
 				secretNames := utils.GetNonEmptyLines(string(secretOutput))
 				ExpectWithOffset(1, secretNames).Should(HaveLen(2))
 
+				if name == "seed" {
+					By("checking that the seed secret is deleted")
+					cmd = exec.Command("kubectl", "get", "secret", "seed-mysql-secret")
+					_, err := utils.Run(cmd)
+					// expect error to occurred
+					ExpectWithOffset(1, err).To(HaveOccurred())
+				}
+
 				By("deleting the DatabaseRequest resource the database is getting deprovisioned")
 				cmd = exec.Command(
 					"kubectl",
@@ -296,17 +304,6 @@ var _ = Describe("controller", Ordered, func() {
 				ExpectWithOffset(1, err).NotTo(HaveOccurred())
 				secretNames = utils.GetNonEmptyLines(string(secretOutput))
 				ExpectWithOffset(1, secretNames).Should(HaveLen(1))
-				if name == "seed" {
-					By("deleting the seed secret")
-					cmd = exec.Command(
-						"kubectl",
-						"delete",
-						"secret",
-						"seed-mysql-secret",
-					)
-					_, err = utils.Run(cmd)
-					ExpectWithOffset(1, err).NotTo(HaveOccurred())
-				}
 			}
 
 			// uncomment to debug ...

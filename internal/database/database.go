@@ -68,8 +68,11 @@ type RelationalDatabaseInterface interface {
 	// This function is idempotent and can be called multiple times without side effects.
 	DropDatabase(ctx context.Context, dsn, name, namespace, dbType string) error
 
-	// GetDatabase returns the database name, username, and password for the given name and namespace.
-	GetDatabase(ctx context.Context, dsn, name, namespace, dbType string) (RelationalDatabaseInfo, error)
+	// GetDatabaseInfo returns the database name, username, and password for the given name and namespace.
+	GetDatabaseInfo(ctx context.Context, dsn, name, namespace, dbType string) (RelationalDatabaseInfo, error)
+
+	// SetDatabaseInfo sets the database name, username, and password for the given name and namespace.
+	SetDatabaseInfo(ctx context.Context, dsn, name, namespace, dbType string, info RelationalDatabaseInfo) error
 }
 
 // RelationalDatabaseImpl is the implementation of the RelationalDatabaseInterface
@@ -449,6 +452,31 @@ func (ri *RelationalDatabaseImpl) databaseInfoMySQL(
 	return info, nil
 }
 
+// insertUserinfoIntoMysql inserts the user into the users table
+// This function is idempotent and can be called multiple times without side effects.
+func (ri *RelationalDatabaseImpl) insertUserInfoIntoMysql(
+	ctx context.Context,
+	dsn, name, namespace string,
+	info RelationalDatabaseInfo,
+) error {
+	db, err := ri.GetConnection(ctx, dsn, mysql)
+	if err != nil {
+		return fmt.Errorf("set database info failed to open %s database: %w", mysql, err)
+	}
+	_, err = db.ExecContext(ctx, "USE dbaas_controller")
+	if err != nil {
+		return fmt.Errorf("failed to select database: %w", err)
+	}
+	// Insert the user into the users table
+	_, err = db.ExecContext(
+		ctx, "INSERT IGNORE INTO users (name, namespace, username, password, dbname) VALUES (?, ?, ?, ?, ?)",
+		name, namespace, info.Username, info.Password, info.Dbname)
+	if err != nil {
+		return fmt.Errorf("failed to insert user into users table: %w", err)
+	}
+	return nil
+}
+
 // databaseInfoPostgreSQL returns the username, password, and database name for the given name and namespace.
 // It also creates the user and database if they do not exist.
 // This function is idempotent and can be called multiple times without side effects.
@@ -489,8 +517,29 @@ func (ri *RelationalDatabaseImpl) databaseInfoPostgreSQL(
 	return info, nil
 }
 
-// GetDatabase returns the database name, username, and password for the given name and namespace.
-func (ri *RelationalDatabaseImpl) GetDatabase(
+// insertUserInfoIntoPostgreSQL inserts the user into the users table
+// This function is idempotent and can be called multiple times without side effects.
+func (ri *RelationalDatabaseImpl) insertUserInfoIntoPostgreSQL(
+	ctx context.Context,
+	dsn, name, namespace string,
+	info RelationalDatabaseInfo,
+) error {
+	db, err := ri.GetConnection(ctx, dsn, postgres)
+	if err != nil {
+		return fmt.Errorf("set database info failed to open %s database: %w", postgres, err)
+	}
+	// Insert the user into the users table
+	_, err = db.ExecContext(
+		ctx, "INSERT INTO dbaas_controller.users (name, namespace, username, password, dbname) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+		name, namespace, info.Username, info.Password, info.Dbname)
+	if err != nil {
+		return fmt.Errorf("failed to insert user into users table: %w", err)
+	}
+	return nil
+}
+
+// GetDatabaseInfo returns the database name, username, and password for the given name and namespace.
+func (ri *RelationalDatabaseImpl) GetDatabaseInfo(
 	ctx context.Context,
 	dsn, name, namespace, dbType string,
 ) (RelationalDatabaseInfo, error) {
@@ -501,4 +550,19 @@ func (ri *RelationalDatabaseImpl) GetDatabase(
 		return ri.databaseInfoPostgreSQL(ctx, dsn, name, namespace)
 	}
 	return RelationalDatabaseInfo{}, fmt.Errorf("get database failed to get %s database: unsupported dbType", dbType)
+}
+
+// SetDatabaseInfo sets the database name, username, and password for the given name and namespace.
+func (ri *RelationalDatabaseImpl) SetDatabaseInfo(
+	ctx context.Context,
+	dsn, name, namespace, dbType string,
+	info RelationalDatabaseInfo,
+) error {
+	log.FromContext(ctx).Info("Setting database", "dbType", dbType, "name", name, "namespace", namespace)
+	if dbType == "mysql" {
+		return ri.insertUserInfoIntoMysql(ctx, dsn, name, namespace, info)
+	} else if dbType == "postgres" {
+		return ri.insertUserInfoIntoPostgreSQL(ctx, dsn, name, namespace, info)
+	}
+	return nil
 }
