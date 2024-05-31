@@ -96,7 +96,7 @@ func (r *MongoDBProviderReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	logger := log.FromContext(ctx).WithName("mongodbprovider_controller")
 	logger.Info("Reconciling MongoDBProvider")
 
-	instance := &crdv1alpha1.MongoDBDProvider{}
+	instance := &crdv1alpha1.MongoDBProvider{}
 	if err := r.Get(ctx, req.NamespacedName, instance); err != nil {
 		if client.IgnoreNotFound(err) == nil {
 			logger.Info("MongoDBProvider resource not found. Ignoring since object must be deleted")
@@ -269,7 +269,7 @@ func (r *MongoDBProviderReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 func (r *MongoDBProviderReconciler) handleError(
 	ctx context.Context,
-	instance *crdv1alpha1.MongoDBDProvider,
+	instance *crdv1alpha1.MongoDBProvider,
 	promErr string,
 	err error,
 ) (ctrl.Result, error) {
@@ -310,7 +310,7 @@ func (r *MongoDBProviderReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	)
 	r.Recorder = mgr.GetEventRecorderFor("mongodbprovider-controller")
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&crdv1alpha1.MongoDBDProvider{}).
+		For(&crdv1alpha1.MongoDBProvider{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		// Only allow one reconcile at a time
 		WithOptions(controller.Options{

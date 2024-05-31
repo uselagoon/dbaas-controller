@@ -43,7 +43,7 @@ var _ = Describe("MongoDBProvider Controller", func() {
 			Name:      resourceName,
 			Namespace: "default",
 		}
-		mongodbprovider := &crdv1alpha1.MongoDBDProvider{}
+		mongodbprovider := &crdv1alpha1.MongoDBProvider{}
 
 		BeforeEach(func() {
 			By("creating the custom resource for the Kind MongoDBProvider")
@@ -68,7 +68,7 @@ var _ = Describe("MongoDBProvider Controller", func() {
 
 			err = k8sClient.Get(ctx, typeNamespacedName, mongodbprovider)
 			if err != nil && errors.IsNotFound(err) {
-				resource := &crdv1alpha1.MongoDBDProvider{
+				resource := &crdv1alpha1.MongoDBProvider{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
 						Namespace: "default",
@@ -95,7 +95,7 @@ var _ = Describe("MongoDBProvider Controller", func() {
 
 		AfterEach(func() {
 			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &crdv1alpha1.MongoDBDProvider{}
+			resource := &crdv1alpha1.MongoDBProvider{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
 
