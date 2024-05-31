@@ -115,8 +115,8 @@ type MongoDBProviderStatus struct {
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 
-// MongoDBDProvider is the Schema for the mongodbproviders API
-type MongoDBDProvider struct {
+// MongoDBProvider is the Schema for the mongodbproviders API
+type MongoDBProvider struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
@@ -130,9 +130,9 @@ type MongoDBDProvider struct {
 type MongoDBProviderList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []MongoDBDProvider `json:"items"`
+	Items           []MongoDBProvider `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&MongoDBDProvider{}, &MongoDBProviderList{})
+	SchemeBuilder.Register(&MongoDBProvider{}, &MongoDBProviderList{})
 }
