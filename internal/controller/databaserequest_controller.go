@@ -298,7 +298,7 @@ func (r *DatabaseRequestReconciler) handleSeed(
 	// if we got a provider connection and db info we set the database info.
 	if err = r.RelationalDatabaseClient.SetDatabaseInfo(
 		ctx,
-		seedInfo.conn.getDSN(),
+		seedInfo.conn.getDSN(false),
 		databaseRequest.Name,
 		databaseRequest.Namespace,
 		databaseRequest.Spec.Type,
@@ -450,7 +450,9 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 			Namespace: databaseRequest.Namespace,
 		},
 	}); err != nil {
-		return r.handleError(ctx, databaseRequest, "delete-service", err)
+		if !apierrors.IsNotFound(err) {
+			return r.handleError(ctx, databaseRequest, "delete-service", err)
+		}
 	}
 	if err := r.Delete(ctx, &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -458,7 +460,9 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 			Namespace: databaseRequest.Namespace,
 		},
 	}); err != nil {
-		return r.handleError(ctx, databaseRequest, "delete-secret", err)
+		if !apierrors.IsNotFound(err) {
+			return r.handleError(ctx, databaseRequest, "delete-secret", err)
+		}
 	}
 	if controllerutil.RemoveFinalizer(databaseRequest, databaseRequestFinalizer) {
 		if err := r.Update(ctx, databaseRequest); err != nil {
@@ -705,7 +709,7 @@ func (r *DatabaseRequestReconciler) relationalDatabaseOperation(
 		log.FromContext(ctx).Info("Creating relational database", "database", databaseRequest.Name)
 		info, err := r.RelationalDatabaseClient.CreateDatabase(
 			ctx,
-			conn.getDSN(),
+			conn.getDSN(false),
 			databaseRequest.Name,
 			databaseRequest.Namespace,
 			databaseRequest.Spec.Type,
@@ -736,7 +740,7 @@ func (r *DatabaseRequestReconciler) relationalDatabaseOperation(
 	case drop:
 		if err := r.RelationalDatabaseClient.DropDatabase(
 			ctx,
-			conn.getDSN(),
+			conn.getDSN(false),
 			databaseRequest.Name,
 			databaseRequest.Namespace,
 			databaseRequest.Spec.Type,
@@ -758,7 +762,7 @@ func (r *DatabaseRequestReconciler) relationalDatabaseOperation(
 		// get the database information
 		info, err := r.RelationalDatabaseClient.GetDatabaseInfo(
 			ctx,
-			conn.getDSN(),
+			conn.getDSN(false),
 			databaseRequest.Name,
 			databaseRequest.Namespace,
 			databaseRequest.Spec.Type,
@@ -798,7 +802,7 @@ func (r *DatabaseRequestReconciler) relationalDatabaseInfoFromSeed(
 	}
 
 	// test if the connection works with the seed
-	if err := r.relDBTestConnection(ctx, dbInfo, dbType); err != nil {
+	if err := r.relDBTestSeedConnection(ctx, dbInfo, dbType); err != nil {
 		return nil, fmt.Errorf("%s db find connection from seed failed to test connection: %w", dbType, err)
 	}
 
@@ -915,7 +919,7 @@ func (r *DatabaseRequestReconciler) findRelationalDatabaseProvider(
 					// check the load of the provider connection
 					// we select the provider with the lower load
 					log.FromContext(ctx).Info("Checking provider database connection", "connection", dbConnection.Name)
-					dbLoad, err := r.RelationalDatabaseClient.Load(ctx, conn.getDSN(), databaseRequest.Spec.Type)
+					dbLoad, err := r.RelationalDatabaseClient.Load(ctx, conn.getDSN(false), databaseRequest.Spec.Type)
 					if err != nil {
 						return nil, "", fmt.Errorf("%s db find provider failed to get load: %w", databaseRequest.Spec.Type, err)
 					}
@@ -966,8 +970,8 @@ func (r *DatabaseRequestReconciler) relDBInfo(
 	return &dbInfo, nil
 }
 
-// relDBTestConnection tests a mysql or postgres connection
-func (r *DatabaseRequestReconciler) relDBTestConnection(
+// relDBTestSeedConnection tests a mysql or postgres connection
+func (r *DatabaseRequestReconciler) relDBTestSeedConnection(
 	ctx context.Context,
 	dbi *dbInfo,
 	dbType string,
@@ -979,9 +983,10 @@ func (r *DatabaseRequestReconciler) relDBTestConnection(
 		username: dbi.userName,
 		password: dbi.password,
 		port:     dbi.port,
+		name:     dbi.database,
 	}
-	if err := r.RelationalDatabaseClient.Ping(ctx, conn.getDSN(), dbType); err != nil {
-		return fmt.Errorf("relation database test connection failed: %w", err)
+	if err := r.RelationalDatabaseClient.Ping(ctx, conn.getDSN(true), dbType); err != nil {
+		return fmt.Errorf("relational database test connection failed: %w", err)
 	}
 	return nil
 }

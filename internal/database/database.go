@@ -3,10 +3,12 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math/rand"
 
 	_ "github.com/go-sql-driver/mysql"
+	md "github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 
@@ -115,6 +117,32 @@ func (ri *RelationalDatabaseImpl) Ping(ctx context.Context, dsn string, dbType s
 	}
 
 	if err := db.PingContext(ctx); err != nil {
+		if dbType == mysql {
+			log.FromContext(ctx).Error(err, "Failed to ping MMMMMySQL database")
+			var driverErr *md.MySQLError
+			if errors.As(err, &driverErr) {
+				switch driverErr.Number {
+				case 1044, 1045:
+					return fmt.Errorf("failed to ping %s database due to invalid credentials: %w", dbType, err)
+				case 1049:
+					return fmt.Errorf("failed to ping %s database due to database does not exist: %w", dbType, err)
+				default:
+					return fmt.Errorf("failed to ping driveErr %s database: %w", dbType, err)
+				}
+			}
+		} else if dbType == postgres {
+			var driverErr *pq.Error
+			if errors.As(err, &driverErr) {
+				switch driverErr.Code {
+				case "28P01":
+					return fmt.Errorf("failed to ping %s database due to invalid credentials: %w", dbType, err)
+				case "3D000":
+					return fmt.Errorf("failed to ping %s database due to database does not exist: %w", dbType, err)
+				default:
+					return fmt.Errorf("failed to ping %s database: %w", dbType, err)
+				}
+			}
+		}
 		return fmt.Errorf("failed to ping %s database: %w", dbType, err)
 	}
 

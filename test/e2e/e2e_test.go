@@ -19,6 +19,7 @@ package e2e
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -176,6 +177,7 @@ var _ = Describe("controller", Ordered, func() {
 			}
 			EventuallyWithOffset(1, verifyControllerUp, time.Minute, time.Second).Should(Succeed())
 
+			By("validating that all database providers and database requests are working")
 			for _, name := range []string{"mysql", "postgres", "seed"} {
 				if name != "seed" {
 					By("creating a RelationalDatabaseProvider resource")
@@ -306,8 +308,94 @@ var _ = Describe("controller", Ordered, func() {
 				ExpectWithOffset(1, secretNames).Should(HaveLen(1))
 			}
 
-			// uncomment to debug ...
-			//time.Sleep(15 * time.Minute)
+			By("validating that broken seed database request are failing in exptected way")
+			for _, name := range []string{"credential-broken-seed", "non-existing-database-seed"} {
+				By("creating seed secret for the DatabaseRequest resource")
+				cmd = exec.Command("kubectl", "apply", "-f", fmt.Sprintf("test/e2e/testdata/%s-secret.yaml", name))
+				_, err = utils.Run(cmd)
+				ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+				By("creating a DatabaseRequest resource")
+				// replace - with _
+				dbrName := strings.ReplaceAll(name, "-", "_")
+				cmd = exec.Command(
+					"kubectl",
+					"apply",
+					"-f",
+					fmt.Sprintf("test/e2e/testdata/crd_v1alpha1_%s_databaserequest.yaml", dbrName),
+				)
+				_, err = utils.Run(cmd)
+				ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+				By("validating that the DatabaseRequest resource is created but fails")
+				cmd = exec.Command(
+					"kubectl",
+					"get",
+					"databaserequest",
+					fmt.Sprintf("%s-databaserequest-sample", name),
+					"-o=jsonpath={.status.conditions[?(@.type=='Ready')].status}",
+				)
+				for i := 0; i < 3; i++ {
+					output, err := utils.Run(cmd)
+					if err != nil {
+						ExpectWithOffset(1, err).NotTo(HaveOccurred())
+					}
+					if strings.TrimSpace(string(output)) == "False" {
+						break
+					} else if i == 2 {
+						Expect(strings.TrimSpace(string(output))).To(Equal("False"))
+					}
+					// give it a bit of time to fail
+					time.Sleep(time.Second)
+				}
+
+				// verify that the service and secret got created
+				By("validating that the service is not created")
+				cmd = exec.Command(
+					"kubectl",
+					"get",
+					"service",
+					"-n", "default",
+					"-l", fmt.Sprintf("app.kubernetes.io/instance=%s-databaserequest-sample", name),
+				)
+				output, err := utils.Run(cmd)
+				ExpectWithOffset(1, err).NotTo(HaveOccurred())
+				Expect(strings.TrimSpace(string(output))).To(Equal("No resources found in default namespace."))
+
+				By("validating that the secret is not created")
+				cmd = exec.Command(
+					"kubectl",
+					"get",
+					"secret",
+					"-n", "default",
+					"-l", fmt.Sprintf("app.kubernetes.io/instance=%s-databaserequest-sample", name),
+				)
+				serviceOutput, err := utils.Run(cmd)
+				ExpectWithOffset(1, err).NotTo(HaveOccurred())
+				Expect(strings.TrimSpace(string(serviceOutput))).To(Equal("No resources found in default namespace."))
+
+				By("validating that the seed secret is not deleted")
+				cmd = exec.Command("kubectl", "get", "secret", fmt.Sprintf("%s-secret", name))
+				_, err = utils.Run(cmd)
+				// expect no error to have occurred because the secret should not get deleted
+				// if the database request is not successfully created
+				ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+				By("deleting the DatabaseRequest resource the database is getting deprovisioned")
+				cmd = exec.Command(
+					"kubectl",
+					"delete",
+					"databaserequest",
+					fmt.Sprintf("%s-databaserequest-sample", name),
+				)
+				_, err = utils.Run(cmd)
+				ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			}
 		})
+
+		// uncomment to debug ...
+		//time.Sleep(15 * time.Minute)
+
 	})
+
 })

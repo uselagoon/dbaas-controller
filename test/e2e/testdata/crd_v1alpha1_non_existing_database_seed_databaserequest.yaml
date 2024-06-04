@@ -1,0 +1,17 @@
+apiVersion: crd.lagoon.sh/v1alpha1
+kind: DatabaseRequest
+metadata:
+  labels:
+    app.kubernetes.io/name: non-existing-database-seed-databaserequest
+    app.kubernetes.io/instance: non-existing-database-seed-databaserequest-sample
+    app.kubernetes.io/part-of: dbaas-controller
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: dbaas-controller
+  name: non-existing-database-seed-databaserequest-sample
+spec:
+  seed:
+    name: non-existing-database-seed-secret
+    namespace: default
+  name: non-existing-database-seed-mysql-db
+  scope: development
+  type: mysql
