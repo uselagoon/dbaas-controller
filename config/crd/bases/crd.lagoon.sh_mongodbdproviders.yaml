@@ -4,20 +4,20 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.14.0
-  name: mongodbdproviders.crd.lagoon.sh
+  name: mongodbproviders.crd.lagoon.sh
 spec:
   group: crd.lagoon.sh
   names:
-    kind: MongoDBDProvider
-    listKind: MongoDBDProviderList
-    plural: mongodbdproviders
-    singular: mongodbdprovider
+    kind: MongoDBProvider
+    listKind: MongoDBProviderList
+    plural: mongodbproviders
+    singular: mongodbprovider
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: MongoDBDProvider is the Schema for the mongodbproviders API
+        description: MongoDBProvider is the Schema for the mongodbproviders API
         properties:
           apiVersion:
             description: |-
