@@ -219,6 +219,8 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
+	// clear the error condition if set
+	meta.RemoveStatusCondition(&databaseRequest.Status.Conditions, "Error")
 	if serviceChanged || secretChanged {
 		if meta.SetStatusCondition(&databaseRequest.Status.Conditions, metav1.Condition{
 			Type:    "Ready",
@@ -266,6 +268,14 @@ func (r *DatabaseRequestReconciler) handleError(
 		Status:  metav1.ConditionFalse,
 		Reason:  errTypeToEventReason(promErr),
 		Message: err.Error(),
+	})
+
+	// add additional condition to reflect the error state more clearly
+	meta.SetStatusCondition(&databaseRequest.Status.Conditions, metav1.Condition{
+		Type:    "Error",
+		Status:  metav1.ConditionTrue,
+		Reason:  "ReconcileFailed",
+		Message: fmt.Sprintf("An error occurred during reconciliation: %v", err),
 	})
 
 	// update the status
@@ -469,6 +479,13 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 			return r.handleError(ctx, databaseRequest, "remove-finalizer", err)
 		}
 	}
+	// record the event
+	r.Recorder.Event(
+		databaseRequest,
+		v1.EventTypeNormal,
+		"DeletedDatabase",
+		fmt.Sprintf("Deleted database %s/%s", databaseRequest.Namespace, databaseRequest.Name),
+	)
 	// cleanup metrics
 	promDatabaseRequestReconcileStatus.DeletePartialMatch(prometheus.Labels{
 		"name":      databaseRequest.Name,

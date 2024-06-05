@@ -118,7 +118,6 @@ func (ri *RelationalDatabaseImpl) Ping(ctx context.Context, dsn string, dbType s
 
 	if err := db.PingContext(ctx); err != nil {
 		if dbType == mysql {
-			log.FromContext(ctx).Error(err, "Failed to ping MMMMMySQL database")
 			var driverErr *md.MySQLError
 			if errors.As(err, &driverErr) {
 				switch driverErr.Number {
@@ -127,7 +126,7 @@ func (ri *RelationalDatabaseImpl) Ping(ctx context.Context, dsn string, dbType s
 				case 1049:
 					return fmt.Errorf("failed to ping %s database due to database does not exist: %w", dbType, err)
 				default:
-					return fmt.Errorf("failed to ping driveErr %s database: %w", dbType, err)
+					return fmt.Errorf("failed to ping %s database: %w", dbType, err)
 				}
 			}
 		} else if dbType == postgres {
