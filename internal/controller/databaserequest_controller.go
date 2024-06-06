@@ -135,7 +135,7 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	if controllerutil.AddFinalizer(databaseRequest, databaseRequestFinalizer) {
 		if err := r.Update(ctx, databaseRequest); err != nil {
-			return r.handleError(ctx, databaseRequest, "add-finalizer", err)
+			return r.handleError(ctx, databaseRequest, "add-finalizer", err, false)
 		}
 	}
 
@@ -154,7 +154,10 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if databaseRequest.Spec.Seed != nil {
 		seedInfo, err := r.handleSeed(ctx, databaseRequest)
 		if err != nil {
-			return r.handleError(ctx, databaseRequest, "handle-seed", err)
+			if errIsInvalidCredentials(err) || errIsDatabaseDoesNotExist(err) {
+				return r.handleError(ctx, databaseRequest, "invalid-seed", err, true)
+			}
+			return r.handleError(ctx, databaseRequest, "handle-seed", err, false)
 		}
 		// now let's update the database request with the connection reference
 		databaseRequest.Spec.DatabaseConnectionReference = seedInfo.databaseProviderRef
@@ -165,11 +168,11 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	} else {
 		if databaseRequest.Spec.DatabaseConnectionReference == nil {
 			if err := r.createDatabase(ctx, databaseRequest); err != nil {
-				return r.handleError(ctx, databaseRequest, "create-database", err)
+				return r.handleError(ctx, databaseRequest, "create-database", err, false)
 			}
 			if databaseRequest.Spec.DatabaseConnectionReference == nil {
 				return r.handleError(
-					ctx, databaseRequest, "missing-connection-reference", errors.New("missing database connection reference"))
+					ctx, databaseRequest, "missing-connection-reference", errors.New("missing database connection reference"), false)
 			}
 		}
 
@@ -191,7 +194,7 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			dbInfo, err = r.relDBInfo(ctx, databaseRequest)
 			if err != nil {
 				return r.handleError(
-					ctx, databaseRequest, fmt.Sprintf("get-%s-database-info", databaseRequest.Spec.Type), err)
+					ctx, databaseRequest, fmt.Sprintf("get-%s-database-info", databaseRequest.Spec.Type), err, false)
 			}
 		} else if databaseRequest.Spec.Type == mongodbType {
 			logger.Info("Get mongodb database info")
@@ -202,12 +205,12 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	serviceChanged, err := r.handleService(ctx, dbInfo, databaseRequest)
 	if err != nil {
-		return r.handleError(ctx, databaseRequest, "handle-service", err)
+		return r.handleError(ctx, databaseRequest, "handle-service", err, false)
 	}
 
 	secretChanged, err := r.handleSecret(ctx, dbInfo, databaseRequest)
 	if err != nil {
-		return r.handleError(ctx, databaseRequest, "handle-secret", err)
+		return r.handleError(ctx, databaseRequest, "handle-secret", err, false)
 	}
 
 	promDatabaseRequestReconcileStatus.With(promLabels(databaseRequest, "")).Set(1)
@@ -229,7 +232,7 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			Message: "The database request has been changed",
 		}) {
 			if err := r.Status().Update(ctx, databaseRequest); err != nil {
-				return r.handleError(ctx, databaseRequest, "update-status", err)
+				return r.handleError(ctx, databaseRequest, "update-status", err, false)
 			}
 		}
 		r.Recorder.Event(databaseRequest, "Normal", "DatabaseRequestUpdated", "The database request has been updated")
@@ -242,7 +245,7 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			Message: "The database request has been created",
 		}) {
 			if err := r.Status().Update(ctx, databaseRequest); err != nil {
-				return r.handleError(ctx, databaseRequest, "update-status", err)
+				return r.handleError(ctx, databaseRequest, "update-status", err, false)
 			}
 		}
 		r.Recorder.Event(databaseRequest, "Normal", "DatabaseRequestUnchanged", "The database request has been created")
@@ -256,6 +259,7 @@ func (r *DatabaseRequestReconciler) handleError(
 	databaseRequest *crdv1alpha1.DatabaseRequest,
 	promErr string,
 	err error,
+	ignoreError bool,
 ) (ctrl.Result, error) {
 	promDatabaseRequestReconcileErrorCounter.With(
 		promLabels(databaseRequest, promErr)).Inc()
@@ -285,7 +289,20 @@ func (r *DatabaseRequestReconciler) handleError(
 		log.FromContext(ctx).Error(err, "Failed to update status")
 	}
 
+	if ignoreError {
+		return ctrl.Result{}, nil
+	}
+
 	return ctrl.Result{}, err
+
+}
+
+func errIsInvalidCredentials(err error) bool {
+	return strings.Contains(err.Error(), "invalid credentials")
+}
+
+func errIsDatabaseDoesNotExist(err error) bool {
+	return strings.Contains(err.Error(), "database does not exist")
 }
 
 func (r *DatabaseRequestReconciler) handleSeed(
@@ -442,7 +459,7 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 			// Implementing additional users would require to extend the logic here
 			logger.Info("Dropping relational database")
 			if err := r.relDBDeletion(ctx, databaseRequest); err != nil {
-				return r.handleError(ctx, databaseRequest, fmt.Sprintf("%s-drop", databaseRequest.Spec.Type), err)
+				return r.handleError(ctx, databaseRequest, fmt.Sprintf("%s-drop", databaseRequest.Spec.Type), err, false)
 			}
 		} else if databaseRequest.Spec.Type == mongodbType {
 			// handle mongodb deletion
@@ -450,7 +467,7 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 		} else {
 			// this should never happen, but just in case
 			logger.Error(ErrInvalidDatabaseType, "Unsupported database type", "type", databaseRequest.Spec.Type)
-			return r.handleError(ctx, databaseRequest, "invalid-database-type", ErrInvalidDatabaseType)
+			return r.handleError(ctx, databaseRequest, "invalid-database-type", ErrInvalidDatabaseType, false)
 		}
 	}
 	serviceName := databaseRequest.Spec.Name
@@ -461,7 +478,7 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 		},
 	}); err != nil {
 		if !apierrors.IsNotFound(err) {
-			return r.handleError(ctx, databaseRequest, "delete-service", err)
+			return r.handleError(ctx, databaseRequest, "delete-service", err, false)
 		}
 	}
 	if err := r.Delete(ctx, &v1.Secret{
@@ -471,12 +488,12 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 		},
 	}); err != nil {
 		if !apierrors.IsNotFound(err) {
-			return r.handleError(ctx, databaseRequest, "delete-secret", err)
+			return r.handleError(ctx, databaseRequest, "delete-secret", err, false)
 		}
 	}
 	if controllerutil.RemoveFinalizer(databaseRequest, databaseRequestFinalizer) {
 		if err := r.Update(ctx, databaseRequest); err != nil {
-			return r.handleError(ctx, databaseRequest, "remove-finalizer", err)
+			return r.handleError(ctx, databaseRequest, "remove-finalizer", err, false)
 		}
 	}
 	// record the event
