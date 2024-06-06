@@ -211,6 +211,11 @@ var _ = Describe("controller", Ordered, func() {
 					cmd = exec.Command("kubectl", "apply", "-f", "test/e2e/testdata/mysql-client-pod.yaml")
 					_, err = utils.Run(cmd)
 					ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+					// We need to wait here a bit because we changed the code to not retry on specific failures in the seed.
+					// As we can see this is problematic... before it would just have automatically retried and worked after the mysql
+					// pod was fully up. Now we need to sleep some arbitrary time to make sure the seed database is up
+					time.Sleep(10 * time.Second)
 				}
 
 				By("creating a DatabaseRequest resource")
