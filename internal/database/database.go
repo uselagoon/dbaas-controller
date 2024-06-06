@@ -307,34 +307,38 @@ func (ri *RelationalDatabaseImpl) CreateDatabase(
 			return info, fmt.Errorf("create database failed to get %s database info: %w", dbType, err)
 		}
 		// Create the database
-		_, err = db.Exec(fmt.Sprintf("CREATE DATABASE \"%s\"", info.Dbname))
-		if pqErr, ok := err.(*pq.Error); !ok || ok && pqErr.Code != "42P04" {
-			// either the error is not a pq.Error or it is a pq.Error but not a duplicate_database error
-			// 42P04 is the error code for duplicate_database
-			return info, fmt.Errorf(
-				"create %s database error in creating the database `%s`: %w", dbType, info.Dbname, err)
+		if _, err := db.Exec(fmt.Sprintf("CREATE DATABASE \"%s\"", info.Dbname)); err != nil {
+			if pqErr, ok := err.(*pq.Error); !ok || ok && pqErr.Code != "42P04" {
+				// either the error is not a pq.Error or it is a pq.Error but not a duplicate_database error
+				// 42P04 is the error code for duplicate_database
+				return info, fmt.Errorf(
+					"create %s database error in creating the database `%s`: %w", dbType, info.Dbname, err)
+			}
 		}
 
 		// Check if user exists and create or update the user
 		var userExists int
-		err = db.QueryRow(fmt.Sprintf("SELECT 1 FROM pg_roles WHERE rolname='%s'", info.Username)).Scan(&userExists)
-		if err != nil && err != sql.ErrNoRows {
+		if err := db.QueryRow(
+			fmt.Sprintf("SELECT 1 FROM pg_roles WHERE rolname='%s'", info.Username),
+		).Scan(&userExists); err != nil && err != sql.ErrNoRows {
 			return info, fmt.Errorf(
 				"create %s database error in check if user exists in database `%s`: %w", dbType, info.Dbname, err)
 		}
 
 		if userExists == 0 {
 			// Create the user with encrypted password
-			_, err = db.Exec(fmt.Sprintf("CREATE USER \"%s\" WITH ENCRYPTED PASSWORD '%s'", info.Username, info.Password))
-			if err != nil {
+			if _, err := db.Exec(
+				fmt.Sprintf("CREATE USER \"%s\" WITH ENCRYPTED PASSWORD '%s'", info.Username, info.Password),
+			); err != nil {
 				return info, fmt.Errorf(
 					"create %s database error in create user in database `%s`: %w", dbType, info.Dbname, err)
 			}
 		}
 
 		// Grant privileges
-		_, err = db.Exec(fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE \"%s\" TO \"%s\"", info.Dbname, info.Username))
-		if err != nil {
+		if _, err := db.Exec(
+			fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE \"%s\" TO \"%s\"", info.Dbname, info.Username),
+		); err != nil {
 			return info, fmt.Errorf(
 				"create %s database error in grant privileges in database `%s`: %w", dbType, info.Dbname, err)
 		}
