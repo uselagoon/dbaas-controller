@@ -13,4 +13,7 @@ spec:
     command: ["sh", "-c"]
     args:
     - |
-      mysql -h mysql-service.mysql -uroot -pe2e-mysql-password -e "CREATE DATABASE IF NOT EXISTS seed-database;"
+      mysql -h mysql-service.mysql -uroot -pe2e-mysql-password -e "CREATE DATABASE IF NOT EXISTS \`seed-database\`;" &&
+      mysql -h mysql-service.mysql -uroot -pe2e-mysql-password -e "CREATE USER IF NOT EXISTS 'seed-username'@'%' IDENTIFIED BY 'seed-password';" &&
+      mysql -h mysql-service.mysql -uroot -pe2e-mysql-password -e "GRANT ALL PRIVILEGES ON \`seed-database\`.* TO 'seed-username'@'%';" &&
+      mysql -h mysql-service.mysql -uroot -pe2e-mysql-password -e "FLUSH PRIVILEGES;"

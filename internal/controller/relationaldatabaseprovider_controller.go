@@ -184,7 +184,7 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 		// make a ping to the database to check if it's up and running and we can connect to it
 		// if not, we should return an error and set the status to 0
 		// Note we could periodically check the status of the database and update the status accordingly...
-		if err := r.RelDBClient.Ping(ctx, conn.getDSN(), instance.Spec.Type); err != nil {
+		if err := r.RelDBClient.Ping(ctx, conn.getDSN(false), instance.Spec.Type); err != nil {
 			errors = append(errors, err)
 			dbStatus = append(dbStatus, crdv1alpha1.ConnectionStatus{
 				Name:     conn.name,
@@ -197,7 +197,7 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 			logger.Error(err, "Failed to ping the database", "hostname", conn.hostname)
 			continue
 		}
-		version, err := r.RelDBClient.Version(ctx, conn.getDSN(), instance.Spec.Type)
+		version, err := r.RelDBClient.Version(ctx, conn.getDSN(false), instance.Spec.Type)
 		if err != nil {
 			errors = append(errors, err)
 			dbStatus = append(dbStatus, crdv1alpha1.ConnectionStatus{
@@ -213,7 +213,7 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 		}
 
 		// check if the database is initialized
-		err = r.RelDBClient.Initialize(ctx, conn.getDSN(), instance.Spec.Type)
+		err = r.RelDBClient.Initialize(ctx, conn.getDSN(false), instance.Spec.Type)
 		if err != nil {
 			errors = append(errors, err)
 			dbStatus = append(dbStatus, crdv1alpha1.ConnectionStatus{
@@ -327,17 +327,23 @@ type reldbConn struct {
 }
 
 // getDSN constructs the DSN string for the MySQL or PostgreSQL connection.
-func (rc *reldbConn) getDSN() string {
+func (rc *reldbConn) getDSN(useDatabase bool) string {
+	dsn := ""
 	if rc.dbType == "mysql" {
-		return fmt.Sprintf("%s:%s@tcp(%s:%d)/", rc.username, rc.password, rc.hostname, rc.port)
+		dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/", rc.username, rc.password, rc.hostname, rc.port)
+		if useDatabase {
+			dsn += rc.name
+		}
 	} else if rc.dbType == "postgres" {
-		return fmt.Sprintf(
+		dsn = fmt.Sprintf(
 			"host=%s port=%d user=%s password=%s sslmode=disable",
 			rc.hostname, rc.port, rc.username, rc.password,
 		)
-	} else {
-		return ""
+		if useDatabase {
+			dsn += fmt.Sprintf(" dbname=%s", rc.name)
+		}
 	}
+	return dsn
 }
 
 // SetupWithManager sets up the controller with the Manager.

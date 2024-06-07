@@ -3,10 +3,12 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math/rand"
 
 	_ "github.com/go-sql-driver/mysql"
+	md "github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 
@@ -68,8 +70,11 @@ type RelationalDatabaseInterface interface {
 	// This function is idempotent and can be called multiple times without side effects.
 	DropDatabase(ctx context.Context, dsn, name, namespace, dbType string) error
 
-	// GetDatabase returns the database name, username, and password for the given name and namespace.
-	GetDatabase(ctx context.Context, dsn, name, namespace, dbType string) (RelationalDatabaseInfo, error)
+	// GetDatabaseInfo returns the database name, username, and password for the given name and namespace.
+	GetDatabaseInfo(ctx context.Context, dsn, name, namespace, dbType string) (RelationalDatabaseInfo, error)
+
+	// SetDatabaseInfo sets the database name, username, and password for the given name and namespace.
+	SetDatabaseInfo(ctx context.Context, dsn, name, namespace, dbType string, info RelationalDatabaseInfo) error
 }
 
 // RelationalDatabaseImpl is the implementation of the RelationalDatabaseInterface
@@ -112,6 +117,31 @@ func (ri *RelationalDatabaseImpl) Ping(ctx context.Context, dsn string, dbType s
 	}
 
 	if err := db.PingContext(ctx); err != nil {
+		if dbType == mysql {
+			var driverErr *md.MySQLError
+			if errors.As(err, &driverErr) {
+				switch driverErr.Number {
+				case 1044, 1045:
+					return fmt.Errorf("failed to ping %s database due to invalid credentials: %w", dbType, err)
+				case 1049:
+					return fmt.Errorf("failed to ping %s database due to database does not exist: %w", dbType, err)
+				default:
+					return fmt.Errorf("failed to ping %s database: %w", dbType, err)
+				}
+			}
+		} else if dbType == postgres {
+			var driverErr *pq.Error
+			if errors.As(err, &driverErr) {
+				switch driverErr.Code {
+				case "28P01":
+					return fmt.Errorf("failed to ping %s database due to invalid credentials: %w", dbType, err)
+				case "3D000":
+					return fmt.Errorf("failed to ping %s database due to database does not exist: %w", dbType, err)
+				default:
+					return fmt.Errorf("failed to ping %s database: %w", dbType, err)
+				}
+			}
+		}
 		return fmt.Errorf("failed to ping %s database: %w", dbType, err)
 	}
 
@@ -277,34 +307,38 @@ func (ri *RelationalDatabaseImpl) CreateDatabase(
 			return info, fmt.Errorf("create database failed to get %s database info: %w", dbType, err)
 		}
 		// Create the database
-		_, err = db.Exec(fmt.Sprintf("CREATE DATABASE \"%s\"", info.Dbname))
-		if pqErr, ok := err.(*pq.Error); !ok || ok && pqErr.Code != "42P04" {
-			// either the error is not a pq.Error or it is a pq.Error but not a duplicate_database error
-			// 42P04 is the error code for duplicate_database
-			return info, fmt.Errorf(
-				"create %s database error in creating the database `%s`: %w", dbType, info.Dbname, err)
+		if _, err := db.Exec(fmt.Sprintf("CREATE DATABASE \"%s\"", info.Dbname)); err != nil {
+			if pqErr, ok := err.(*pq.Error); !ok || ok && pqErr.Code != "42P04" {
+				// either the error is not a pq.Error or it is a pq.Error but not a duplicate_database error
+				// 42P04 is the error code for duplicate_database
+				return info, fmt.Errorf(
+					"create %s database error in creating the database `%s`: %w", dbType, info.Dbname, err)
+			}
 		}
 
 		// Check if user exists and create or update the user
 		var userExists int
-		err = db.QueryRow(fmt.Sprintf("SELECT 1 FROM pg_roles WHERE rolname='%s'", info.Username)).Scan(&userExists)
-		if err != nil && err != sql.ErrNoRows {
+		if err := db.QueryRow(
+			fmt.Sprintf("SELECT 1 FROM pg_roles WHERE rolname='%s'", info.Username),
+		).Scan(&userExists); err != nil && err != sql.ErrNoRows {
 			return info, fmt.Errorf(
 				"create %s database error in check if user exists in database `%s`: %w", dbType, info.Dbname, err)
 		}
 
 		if userExists == 0 {
 			// Create the user with encrypted password
-			_, err = db.Exec(fmt.Sprintf("CREATE USER \"%s\" WITH ENCRYPTED PASSWORD '%s'", info.Username, info.Password))
-			if err != nil {
+			if _, err := db.Exec(
+				fmt.Sprintf("CREATE USER \"%s\" WITH ENCRYPTED PASSWORD '%s'", info.Username, info.Password),
+			); err != nil {
 				return info, fmt.Errorf(
 					"create %s database error in create user in database `%s`: %w", dbType, info.Dbname, err)
 			}
 		}
 
 		// Grant privileges
-		_, err = db.Exec(fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE \"%s\" TO \"%s\"", info.Dbname, info.Username))
-		if err != nil {
+		if _, err := db.Exec(
+			fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE \"%s\" TO \"%s\"", info.Dbname, info.Username),
+		); err != nil {
 			return info, fmt.Errorf(
 				"create %s database error in grant privileges in database `%s`: %w", dbType, info.Dbname, err)
 		}
@@ -449,6 +483,31 @@ func (ri *RelationalDatabaseImpl) databaseInfoMySQL(
 	return info, nil
 }
 
+// insertUserinfoIntoMysql inserts the user into the users table
+// This function is idempotent and can be called multiple times without side effects.
+func (ri *RelationalDatabaseImpl) insertUserInfoIntoMysql(
+	ctx context.Context,
+	dsn, name, namespace string,
+	info RelationalDatabaseInfo,
+) error {
+	db, err := ri.GetConnection(ctx, dsn, mysql)
+	if err != nil {
+		return fmt.Errorf("set database info failed to open %s database: %w", mysql, err)
+	}
+	_, err = db.ExecContext(ctx, "USE dbaas_controller")
+	if err != nil {
+		return fmt.Errorf("failed to select database: %w", err)
+	}
+	// Insert the user into the users table
+	_, err = db.ExecContext(
+		ctx, "INSERT IGNORE INTO users (name, namespace, username, password, dbname) VALUES (?, ?, ?, ?, ?)",
+		name, namespace, info.Username, info.Password, info.Dbname)
+	if err != nil {
+		return fmt.Errorf("failed to insert user into users table: %w", err)
+	}
+	return nil
+}
+
 // databaseInfoPostgreSQL returns the username, password, and database name for the given name and namespace.
 // It also creates the user and database if they do not exist.
 // This function is idempotent and can be called multiple times without side effects.
@@ -489,8 +548,29 @@ func (ri *RelationalDatabaseImpl) databaseInfoPostgreSQL(
 	return info, nil
 }
 
-// GetDatabase returns the database name, username, and password for the given name and namespace.
-func (ri *RelationalDatabaseImpl) GetDatabase(
+// insertUserInfoIntoPostgreSQL inserts the user into the users table
+// This function is idempotent and can be called multiple times without side effects.
+func (ri *RelationalDatabaseImpl) insertUserInfoIntoPostgreSQL(
+	ctx context.Context,
+	dsn, name, namespace string,
+	info RelationalDatabaseInfo,
+) error {
+	db, err := ri.GetConnection(ctx, dsn, postgres)
+	if err != nil {
+		return fmt.Errorf("set database info failed to open %s database: %w", postgres, err)
+	}
+	// Insert the user into the users table
+	_, err = db.ExecContext(
+		ctx, "INSERT INTO dbaas_controller.users (name, namespace, username, password, dbname) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+		name, namespace, info.Username, info.Password, info.Dbname)
+	if err != nil {
+		return fmt.Errorf("failed to insert user into users table: %w", err)
+	}
+	return nil
+}
+
+// GetDatabaseInfo returns the database name, username, and password for the given name and namespace.
+func (ri *RelationalDatabaseImpl) GetDatabaseInfo(
 	ctx context.Context,
 	dsn, name, namespace, dbType string,
 ) (RelationalDatabaseInfo, error) {
@@ -501,4 +581,19 @@ func (ri *RelationalDatabaseImpl) GetDatabase(
 		return ri.databaseInfoPostgreSQL(ctx, dsn, name, namespace)
 	}
 	return RelationalDatabaseInfo{}, fmt.Errorf("get database failed to get %s database: unsupported dbType", dbType)
+}
+
+// SetDatabaseInfo sets the database name, username, and password for the given name and namespace.
+func (ri *RelationalDatabaseImpl) SetDatabaseInfo(
+	ctx context.Context,
+	dsn, name, namespace, dbType string,
+	info RelationalDatabaseInfo,
+) error {
+	log.FromContext(ctx).Info("Setting database", "dbType", dbType, "name", name, "namespace", namespace)
+	if dbType == "mysql" {
+		return ri.insertUserInfoIntoMysql(ctx, dsn, name, namespace, info)
+	} else if dbType == "postgres" {
+		return ri.insertUserInfoIntoPostgreSQL(ctx, dsn, name, namespace, info)
+	}
+	return nil
 }

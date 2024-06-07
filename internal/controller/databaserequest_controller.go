@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -40,6 +41,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/uselagoon/dbaas-controller/api/v1alpha1"
 	crdv1alpha1 "github.com/uselagoon/dbaas-controller/api/v1alpha1"
 	"github.com/uselagoon/dbaas-controller/internal/database"
 )
@@ -133,7 +135,7 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	if controllerutil.AddFinalizer(databaseRequest, databaseRequestFinalizer) {
 		if err := r.Update(ctx, databaseRequest); err != nil {
-			return r.handleError(ctx, databaseRequest, "add-finalizer", err)
+			return r.handleError(ctx, databaseRequest, "add-finalizer", err, false)
 		}
 	}
 
@@ -148,54 +150,67 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	if databaseRequest.Spec.DatabaseConnectionReference == nil {
-		if err := r.createDatabase(ctx, databaseRequest); err != nil {
-			return r.handleError(ctx, databaseRequest, "create-database", err)
-		}
-		if databaseRequest.Spec.DatabaseConnectionReference == nil {
-			return r.handleError(
-				ctx, databaseRequest, "missing-connection-reference", errors.New("missing database connection reference"))
-		}
-	}
-
-	if databaseRequest.Status.ObservedDatabaseConnectionReference != databaseRequest.Spec.DatabaseConnectionReference {
-		// update the database connection reference
-		// FIXME: maybe this needs some additional checks
-		// For example implement an update logic by checking:
-		// - the connection works to the potentially new database
-		// - might need to create user and password for the new connection?
-		// - updating the secret accordingly
-		// - anything else needed?
-		databaseRequest.Status.ObservedDatabaseConnectionReference = databaseRequest.Spec.DatabaseConnectionReference
-	}
-
-	// Note at the moment we only have one "primary" connection per database request
-	// Implementing additional users would require to extend the logic here
-	// check if the database request is already created and the secret and service exist
-	var dbInfo dbInfo
-	if databaseRequest.Spec.Type == mysqlType || databaseRequest.Spec.Type == postgresType {
-		logger.Info("Get relational database info")
-		// get the database info
-		var err error
-		dbInfo, err = r.relDBInfo(ctx, databaseRequest)
+	var dbInfo *dbInfo
+	if databaseRequest.Spec.Seed != nil {
+		seedInfo, err := r.handleSeed(ctx, databaseRequest)
 		if err != nil {
-			return r.handleError(
-				ctx, databaseRequest, fmt.Sprintf("get-%s-database-info", databaseRequest.Spec.Type), err)
+			if errIsInvalidCredentials(err) || errIsDatabaseDoesNotExist(err) {
+				return r.handleError(ctx, databaseRequest, "invalid-seed", err, true)
+			}
+			return r.handleError(ctx, databaseRequest, "handle-seed", err, false)
 		}
-	} else if databaseRequest.Spec.Type == mongodbType {
-		logger.Info("Get mongodb database info")
+		// now let's update the database request with the connection reference
+		databaseRequest.Spec.DatabaseConnectionReference = seedInfo.databaseProviderRef
+		databaseRequest.Status.ObservedDatabaseConnectionReference = databaseRequest.Spec.DatabaseConnectionReference
+		databaseRequest.Spec.Seed = nil
+		dbInfo = seedInfo.dbInfo
+		logger.Info("Seed database setup complete")
 	} else {
-		logger.Error(ErrInvalidDatabaseType, "Unsupported database type", "type", databaseRequest.Spec.Type)
+		if databaseRequest.Spec.DatabaseConnectionReference == nil {
+			if err := r.createDatabase(ctx, databaseRequest); err != nil {
+				return r.handleError(ctx, databaseRequest, "create-database", err, false)
+			}
+			if databaseRequest.Spec.DatabaseConnectionReference == nil {
+				return r.handleError(
+					ctx, databaseRequest, "missing-connection-reference", errors.New("missing database connection reference"), false)
+			}
+		}
+
+		if databaseRequest.Status.ObservedDatabaseConnectionReference != databaseRequest.Spec.DatabaseConnectionReference {
+			logger.Info("Database connection reference changed")
+			// This means that the database provider has changed and we need to test the connection.
+			// We will also update the service and secret BUT we do not create a new database, user or password.
+			//
+			databaseRequest.Status.ObservedDatabaseConnectionReference = databaseRequest.Spec.DatabaseConnectionReference
+		}
+
+		// Note at the moment we only have one "primary" connection per database request
+		// Implementing additional users would require to extend the logic here
+		// check if the database request is already created and the secret and service exist
+		if databaseRequest.Spec.Type == mysqlType || databaseRequest.Spec.Type == postgresType {
+			logger.Info("Get relational database info")
+			// get the database info
+			var err error
+			dbInfo, err = r.relDBInfo(ctx, databaseRequest)
+			if err != nil {
+				return r.handleError(
+					ctx, databaseRequest, fmt.Sprintf("get-%s-database-info", databaseRequest.Spec.Type), err, false)
+			}
+		} else if databaseRequest.Spec.Type == mongodbType {
+			logger.Info("Get mongodb database info")
+		} else {
+			logger.Error(ErrInvalidDatabaseType, "Unsupported database type", "type", databaseRequest.Spec.Type)
+		}
 	}
 
-	serviceChanged, err := r.handleService(ctx, &dbInfo, databaseRequest)
+	serviceChanged, err := r.handleService(ctx, dbInfo, databaseRequest)
 	if err != nil {
-		return r.handleError(ctx, databaseRequest, "handle-service", err)
+		return r.handleError(ctx, databaseRequest, "handle-service", err, false)
 	}
 
-	secretChanged, err := r.handleSecret(ctx, &dbInfo, databaseRequest)
+	secretChanged, err := r.handleSecret(ctx, dbInfo, databaseRequest)
 	if err != nil {
-		return r.handleError(ctx, databaseRequest, "handle-secret", err)
+		return r.handleError(ctx, databaseRequest, "handle-secret", err, false)
 	}
 
 	promDatabaseRequestReconcileStatus.With(promLabels(databaseRequest, "")).Set(1)
@@ -207,6 +222,8 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
+	// clear the error condition if set
+	meta.RemoveStatusCondition(&databaseRequest.Status.Conditions, "Error")
 	if serviceChanged || secretChanged {
 		if meta.SetStatusCondition(&databaseRequest.Status.Conditions, metav1.Condition{
 			Type:    "Ready",
@@ -215,7 +232,7 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			Message: "The database request has been changed",
 		}) {
 			if err := r.Status().Update(ctx, databaseRequest); err != nil {
-				return r.handleError(ctx, databaseRequest, "update-status", err)
+				return r.handleError(ctx, databaseRequest, "update-status", err, false)
 			}
 		}
 		r.Recorder.Event(databaseRequest, "Normal", "DatabaseRequestUpdated", "The database request has been updated")
@@ -228,7 +245,7 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			Message: "The database request has been created",
 		}) {
 			if err := r.Status().Update(ctx, databaseRequest); err != nil {
-				return r.handleError(ctx, databaseRequest, "update-status", err)
+				return r.handleError(ctx, databaseRequest, "update-status", err, false)
 			}
 		}
 		r.Recorder.Event(databaseRequest, "Normal", "DatabaseRequestUnchanged", "The database request has been created")
@@ -242,6 +259,7 @@ func (r *DatabaseRequestReconciler) handleError(
 	databaseRequest *crdv1alpha1.DatabaseRequest,
 	promErr string,
 	err error,
+	ignoreError bool,
 ) (ctrl.Result, error) {
 	promDatabaseRequestReconcileErrorCounter.With(
 		promLabels(databaseRequest, promErr)).Inc()
@@ -256,6 +274,14 @@ func (r *DatabaseRequestReconciler) handleError(
 		Message: err.Error(),
 	})
 
+	// add additional condition to reflect the error state more clearly
+	meta.SetStatusCondition(&databaseRequest.Status.Conditions, metav1.Condition{
+		Type:    "Error",
+		Status:  metav1.ConditionTrue,
+		Reason:  "ReconcileFailed",
+		Message: fmt.Sprintf("An error occurred during reconciliation: %v", err),
+	})
+
 	// update the status
 	if err := r.Status().Update(ctx, databaseRequest); err != nil {
 		promDatabaseRequestReconcileErrorCounter.With(
@@ -263,7 +289,66 @@ func (r *DatabaseRequestReconciler) handleError(
 		log.FromContext(ctx).Error(err, "Failed to update status")
 	}
 
+	if ignoreError {
+		return ctrl.Result{}, nil
+	}
+
 	return ctrl.Result{}, err
+
+}
+
+func errIsInvalidCredentials(err error) bool {
+	return strings.Contains(err.Error(), "invalid credentials")
+}
+
+func errIsDatabaseDoesNotExist(err error) bool {
+	return strings.Contains(err.Error(), "database does not exist")
+}
+
+func (r *DatabaseRequestReconciler) handleSeed(
+	ctx context.Context,
+	databaseRequest *crdv1alpha1.DatabaseRequest,
+) (*seedDatabaseInfo, error) {
+	logger := log.FromContext(ctx)
+	logger.Info("Get seed database info")
+	seedInfo, err := r.relationalDatabaseInfoFromSeed(
+		ctx,
+		databaseRequest.Spec.Seed,
+		databaseRequest.Spec.Type,
+		databaseRequest.Spec.Scope,
+	)
+	if err != nil {
+		return nil, err
+	}
+	logger.Info("Found seed connection", "connectionName", seedInfo.conn.name)
+
+	// if we got a provider connection and db info we set the database info.
+	if err = r.RelationalDatabaseClient.SetDatabaseInfo(
+		ctx,
+		seedInfo.conn.getDSN(false),
+		databaseRequest.Name,
+		databaseRequest.Namespace,
+		databaseRequest.Spec.Type,
+		database.RelationalDatabaseInfo{
+			Username: seedInfo.dbInfo.userName,
+			Password: seedInfo.dbInfo.password,
+			Dbname:   seedInfo.dbInfo.database,
+		},
+	); err != nil {
+		return nil, err
+	}
+	logger.Info("Set database info", "username", seedInfo.dbInfo.userName, "database", seedInfo.dbInfo.database)
+	// get rid of the seed secret
+	if err := r.Delete(ctx, &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      databaseRequest.Spec.Seed.Name,
+			Namespace: databaseRequest.Spec.Seed.Namespace,
+		},
+	}); err != nil {
+		return nil, err
+	}
+	logger.Info("Deleted seed secret", "secret", databaseRequest.Spec.Seed.Name)
+	return seedInfo, nil
 }
 
 // handleService creates or updates the service for the database request
@@ -316,6 +401,7 @@ func (r *DatabaseRequestReconciler) handleService(
 	return false, nil
 }
 
+// handleSecret creates or updates the secret for the database request
 func (r *DatabaseRequestReconciler) handleSecret(
 	ctx context.Context, dbInfo *dbInfo, databaseRequest *crdv1alpha1.DatabaseRequest) (bool, error) {
 	// Note at the moment we only have one "primary" connection per database request
@@ -361,18 +447,19 @@ func (r *DatabaseRequestReconciler) handleSecret(
 	return false, nil
 }
 
+// deleteDatabase deletes the database based on the database request
 func (r *DatabaseRequestReconciler) deleteDatabase(
 	ctx context.Context, databaseRequest *crdv1alpha1.DatabaseRequest) (ctrl.Result, error) {
 	// handle deletion logic
 	logger := log.FromContext(ctx)
-	if databaseRequest.Spec.DropDatabaseOnDelete {
+	if databaseRequest.Spec.Seed == nil && databaseRequest.Spec.DropDatabaseOnDelete {
 		if databaseRequest.Spec.Type == mysqlType || databaseRequest.Spec.Type == postgresType {
 			// handle relational database deletion
 			// Note at the moment we only have one "primary" connection per database request
 			// Implementing additional users would require to extend the logic here
 			logger.Info("Dropping relational database")
 			if err := r.relDBDeletion(ctx, databaseRequest); err != nil {
-				return r.handleError(ctx, databaseRequest, fmt.Sprintf("%s-drop", databaseRequest.Spec.Type), err)
+				return r.handleError(ctx, databaseRequest, fmt.Sprintf("%s-drop", databaseRequest.Spec.Type), err, false)
 			}
 		} else if databaseRequest.Spec.Type == mongodbType {
 			// handle mongodb deletion
@@ -380,7 +467,7 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 		} else {
 			// this should never happen, but just in case
 			logger.Error(ErrInvalidDatabaseType, "Unsupported database type", "type", databaseRequest.Spec.Type)
-			return r.handleError(ctx, databaseRequest, "invalid-database-type", ErrInvalidDatabaseType)
+			return r.handleError(ctx, databaseRequest, "invalid-database-type", ErrInvalidDatabaseType, false)
 		}
 	}
 	serviceName := databaseRequest.Spec.Name
@@ -390,7 +477,9 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 			Namespace: databaseRequest.Namespace,
 		},
 	}); err != nil {
-		return r.handleError(ctx, databaseRequest, "delete-service", err)
+		if !apierrors.IsNotFound(err) {
+			return r.handleError(ctx, databaseRequest, "delete-service", err, false)
+		}
 	}
 	if err := r.Delete(ctx, &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -398,13 +487,22 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 			Namespace: databaseRequest.Namespace,
 		},
 	}); err != nil {
-		return r.handleError(ctx, databaseRequest, "delete-secret", err)
+		if !apierrors.IsNotFound(err) {
+			return r.handleError(ctx, databaseRequest, "delete-secret", err, false)
+		}
 	}
 	if controllerutil.RemoveFinalizer(databaseRequest, databaseRequestFinalizer) {
 		if err := r.Update(ctx, databaseRequest); err != nil {
-			return r.handleError(ctx, databaseRequest, "remove-finalizer", err)
+			return r.handleError(ctx, databaseRequest, "remove-finalizer", err, false)
 		}
 	}
+	// record the event
+	r.Recorder.Event(
+		databaseRequest,
+		v1.EventTypeNormal,
+		"DeletedDatabase",
+		fmt.Sprintf("Deleted database %s/%s", databaseRequest.Namespace, databaseRequest.Name),
+	)
 	// cleanup metrics
 	promDatabaseRequestReconcileStatus.DeletePartialMatch(prometheus.Labels{
 		"name":      databaseRequest.Name,
@@ -413,6 +511,7 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 	return ctrl.Result{}, nil
 }
 
+// createDatabase creates the database based on the database request
 func (r *DatabaseRequestReconciler) createDatabase(
 	ctx context.Context, databaseRequest *crdv1alpha1.DatabaseRequest) error {
 	logger := log.FromContext(ctx)
@@ -439,6 +538,21 @@ func (r *DatabaseRequestReconciler) createDatabase(
 	}
 
 	return nil
+}
+
+// seedDatabase returns the database information from the seed secret
+func (r *DatabaseRequestReconciler) seedDatabase(
+	ctx context.Context,
+	seed *v1.SecretReference,
+) (*dbInfo, error) {
+	secret := &v1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      seed.Name,
+		Namespace: seed.Namespace,
+	}, secret); err != nil {
+		return nil, fmt.Errorf("failed to get seed secret %s: %w", seed.Name, err)
+	}
+	return dbInfoFromSeed(secret)
 }
 
 // promLabels returns the prometheus labels for the database request
@@ -496,6 +610,7 @@ type dbInfo struct {
 	port     int
 }
 
+// getSecretData returns the secret data for the database
 func (m *dbInfo) getSecretData(name, serviceName string) map[string][]byte {
 	name = strings.ToUpper(strings.Replace(name, "-", "_", -1))
 	return map[string][]byte{
@@ -505,6 +620,47 @@ func (m *dbInfo) getSecretData(name, serviceName string) map[string][]byte {
 		fmt.Sprintf("%s_HOST", strings.ToUpper(name)):     []byte(serviceName),
 		fmt.Sprintf("%s_PORT", strings.ToUpper(name)):     []byte(fmt.Sprintf("%d", m.port)),
 	}
+}
+
+// dbInfoFromSeed returns a dbInfo struct from the seed secret
+func dbInfoFromSeed(secret *v1.Secret) (*dbInfo, error) {
+	// check if the secret has all the required keys
+	info := &dbInfo{}
+	if val, ok := secret.Data["database"]; !ok {
+		return nil, errors.New("missing database key in seed secret")
+	} else {
+		info.database = string(val)
+	}
+
+	if val, ok := secret.Data["hostname"]; !ok {
+		return nil, errors.New("missing hostname key in seed secret")
+	} else {
+		info.hostName = string(val)
+	}
+
+	if val, ok := secret.Data["username"]; !ok {
+		return nil, errors.New("missing username key in seed secret")
+	} else {
+		info.userName = string(val)
+	}
+
+	if val, ok := secret.Data["password"]; !ok {
+		return nil, errors.New("missing password key in seed secret")
+	} else {
+		info.password = string(val)
+	}
+
+	if val, ok := secret.Data["port"]; !ok {
+		return nil, errors.New("missing port key in seed secret")
+	} else {
+		port, err := strconv.Atoi(string(val))
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert port to int: %w", err)
+		}
+		info.port = port
+	}
+
+	return info, nil
 }
 
 // relationalDatabaseOperation performs the relational database operations to create, drop and get database information
@@ -587,7 +743,7 @@ func (r *DatabaseRequestReconciler) relationalDatabaseOperation(
 		log.FromContext(ctx).Info("Creating relational database", "database", databaseRequest.Name)
 		info, err := r.RelationalDatabaseClient.CreateDatabase(
 			ctx,
-			conn.getDSN(),
+			conn.getDSN(false),
 			databaseRequest.Name,
 			databaseRequest.Namespace,
 			databaseRequest.Spec.Type,
@@ -618,7 +774,7 @@ func (r *DatabaseRequestReconciler) relationalDatabaseOperation(
 	case drop:
 		if err := r.RelationalDatabaseClient.DropDatabase(
 			ctx,
-			conn.getDSN(),
+			conn.getDSN(false),
 			databaseRequest.Name,
 			databaseRequest.Namespace,
 			databaseRequest.Spec.Type,
@@ -638,9 +794,9 @@ func (r *DatabaseRequestReconciler) relationalDatabaseOperation(
 			return fmt.Errorf("%s db operation %s failed due to missing dbInfo", databaseRequest.Spec.Type, operation)
 		}
 		// get the database information
-		info, err := r.RelationalDatabaseClient.GetDatabase(
+		info, err := r.RelationalDatabaseClient.GetDatabaseInfo(
 			ctx,
-			conn.getDSN(),
+			conn.getDSN(false),
 			databaseRequest.Name,
 			databaseRequest.Namespace,
 			databaseRequest.Spec.Type,
@@ -658,6 +814,92 @@ func (r *DatabaseRequestReconciler) relationalDatabaseOperation(
 	default:
 		return fmt.Errorf("%s db operation %s failed due to invalid operation", databaseRequest.Spec.Type, operation)
 	}
+}
+
+// seedDatabaseInfo is a struct to hold the seed database information
+type seedDatabaseInfo struct {
+	dbInfo              *dbInfo
+	conn                *reldbConn
+	databaseProviderRef *v1alpha1.DatabaseConnectionReference
+}
+
+// relationalDatabaseInfoFromSeed finds the relational database provider based on the seed secret
+func (r *DatabaseRequestReconciler) relationalDatabaseInfoFromSeed(
+	ctx context.Context,
+	seed *v1.SecretReference,
+	dbType string,
+	scope string,
+) (*seedDatabaseInfo, error) {
+	dbInfo, err := r.seedDatabase(ctx, seed)
+	if err != nil {
+		return nil, fmt.Errorf("%s db find connection from seed failed to get seed database: %w", dbType, err)
+	}
+
+	// test if the connection works with the seed
+	if err := r.relDBTestSeedConnection(ctx, dbInfo, dbType); err != nil {
+		return nil, fmt.Errorf("%s db find connection from seed failed to test connection: %w", dbType, err)
+	}
+
+	dbProviders := &crdv1alpha1.RelationalDatabaseProviderList{}
+	if err := r.List(ctx, dbProviders); err != nil {
+		return nil, fmt.Errorf("%s db find connection from seed failed to list database providers: %w",
+			dbType, err,
+		)
+	}
+
+	var connection *crdv1alpha1.Connection
+	var databaseProviderRef *v1alpha1.DatabaseConnectionReference
+	for _, dbProvider := range dbProviders.Items {
+		if dbProvider.Spec.Scope == scope && dbProvider.Spec.Type == dbType {
+			for _, dbConnection := range dbProvider.Spec.Connections {
+				if dbConnection.Enabled && dbConnection.Hostname == dbInfo.hostName &&
+					dbConnection.Port == dbInfo.port {
+					log.FromContext(ctx).Info("Found provider", "provider", dbProvider.Name)
+					conn := dbConnection
+					connection = &conn
+					databaseProviderRef = &crdv1alpha1.DatabaseConnectionReference{
+						Name: connection.Name,
+						DatabaseObjectReference: v1.ObjectReference{
+							Kind:            dbProvider.Kind,
+							Name:            dbProvider.Name,
+							UID:             dbProvider.UID,
+							ResourceVersion: dbProvider.ResourceVersion,
+						},
+					}
+				}
+			}
+		}
+	}
+
+	if connection == nil {
+		return nil, fmt.Errorf("%s db find connection from seed failed due to provider not found", dbType)
+	}
+
+	secret := &v1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      connection.PasswordSecretRef.Name,
+		Namespace: connection.PasswordSecretRef.Namespace,
+	}, secret); err != nil {
+		return nil, fmt.Errorf("%s db find connection from seed failed to get connection password from secret: %w",
+			dbType, err,
+		)
+	}
+
+	password := string(secret.Data["password"])
+	if password == "" {
+		return nil, fmt.Errorf("%s db find connection from seed failed due to empty password", dbType)
+	}
+
+	conn := &reldbConn{
+		dbType:   dbType,
+		name:     connection.Name,
+		hostname: connection.Hostname,
+		username: connection.Username,
+		password: password,
+		port:     connection.Port,
+	}
+
+	return &seedDatabaseInfo{dbInfo: dbInfo, conn: conn, databaseProviderRef: databaseProviderRef}, nil
 }
 
 // findRelationalDatabaseProvider finds the relational database provider with the same scope and the lower load
@@ -711,7 +953,7 @@ func (r *DatabaseRequestReconciler) findRelationalDatabaseProvider(
 					// check the load of the provider connection
 					// we select the provider with the lower load
 					log.FromContext(ctx).Info("Checking provider database connection", "connection", dbConnection.Name)
-					dbLoad, err := r.RelationalDatabaseClient.Load(ctx, conn.getDSN(), databaseRequest.Spec.Type)
+					dbLoad, err := r.RelationalDatabaseClient.Load(ctx, conn.getDSN(false), databaseRequest.Spec.Type)
 					if err != nil {
 						return nil, "", fmt.Errorf("%s db find provider failed to get load: %w", databaseRequest.Spec.Type, err)
 					}
@@ -752,14 +994,35 @@ func (r *DatabaseRequestReconciler) relDBDeletion(
 func (r *DatabaseRequestReconciler) relDBInfo(
 	ctx context.Context,
 	databaseRequest *crdv1alpha1.DatabaseRequest,
-) (dbInfo, error) {
+) (*dbInfo, error) {
 	log.FromContext(ctx).Info("Retrieving relational database information")
 
 	dbInfo := dbInfo{}
 	if err := r.relationalDatabaseOperation(ctx, info, databaseRequest, &dbInfo); err != nil {
-		return dbInfo, fmt.Errorf("relational db info failed: %w", err)
+		return nil, fmt.Errorf("relational db info failed: %w", err)
 	}
-	return dbInfo, nil
+	return &dbInfo, nil
+}
+
+// relDBTestSeedConnection tests a mysql or postgres connection
+func (r *DatabaseRequestReconciler) relDBTestSeedConnection(
+	ctx context.Context,
+	dbi *dbInfo,
+	dbType string,
+) error {
+	log.FromContext(ctx).Info("Testing relational database connection connection")
+	conn := reldbConn{
+		dbType:   dbType,
+		hostname: dbi.hostName,
+		username: dbi.userName,
+		password: dbi.password,
+		port:     dbi.port,
+		name:     dbi.database,
+	}
+	if err := r.RelationalDatabaseClient.Ping(ctx, conn.getDSN(true), dbType); err != nil {
+		return fmt.Errorf("relational database test connection failed: %w", err)
+	}
+	return nil
 }
 
 // lock is a simple lock implementation to avoid creating the same database in parallel

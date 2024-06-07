@@ -35,9 +35,14 @@ func (mi *RelationalDatabaseMock) DropDatabase(ctx context.Context, dsn, name, n
 	return nil
 }
 
-func (mi *RelationalDatabaseMock) GetDatabase(
+func (mi *RelationalDatabaseMock) GetDatabaseInfo(
 	ctx context.Context, dsn, name, namespace, kind string) (RelationalDatabaseInfo, error) {
 	return RelationalDatabaseInfo{Username: "user", Password: "pass", Dbname: "db"}, nil
+}
+
+func (mi *RelationalDatabaseMock) SetDatabaseInfo(
+	ctx context.Context, dsn, name, namespace, kind string, info RelationalDatabaseInfo) error {
+	return nil
 }
 
 func (mi *RelationalDatabaseMock) Load(ctx context.Context, dsn string, kind string) (int, error) {
