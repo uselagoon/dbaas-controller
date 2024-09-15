@@ -71,10 +71,7 @@ type RelationalDatabaseProviderSpec struct {
 
 	//+kubebuilder:required
 	//+kubebuilder:validation:Required
-	//+kubebuilder:validation:Enum=production;development;custom
-	//+kubebuilder:default:=development
-	// Scope is the scope of the database request
-	// it can be either "production" or "development" or "custom"
+	// Scope is the scope of the database request, this is used to select a provider from a pool of scopes
 	Scope string `json:"scope"`
 
 	//+kubebuilder:validation:MinItems=1

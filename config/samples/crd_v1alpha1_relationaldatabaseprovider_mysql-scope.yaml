@@ -1,0 +1,19 @@
+apiVersion: crd.lagoon.sh/v1alpha1
+kind: RelationalDatabaseProvider
+metadata:
+  labels:
+    app.kubernetes.io/name: dbaas-controller
+    app.kubernetes.io/managed-by: kustomize
+  name: relationaldatabaseprovider-mysql-scope-sample
+spec:
+  type: mysql
+  scope: vip-development
+  connections:
+    - name: primary-test-mysql-connection
+      hostname: mysql-service.mysql
+      passwordSecretRef:
+        name: mysql-secret
+        namespace: mysql
+      port: 3306
+      username: root
+      enabled: true

@@ -101,14 +101,8 @@ spec:
                 minItems: 1
                 type: array
               scope:
-                default: development
-                description: |-
-                  Scope is the scope of the database request
-                  it can be either "production" or "development" or "custom"
-                enum:
-                - production
-                - development
-                - custom
+                description: Scope is the scope of the database request, this is used
+                  to select a provider from a pool of scopes
                 type: string
               type:
                 description: |-
