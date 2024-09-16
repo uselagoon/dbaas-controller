@@ -60,7 +60,7 @@ var _ = Describe("controller", Ordered, func() {
 		utils.UninstallCertManager()
 
 		By("removing the RelationalDatabaseProvider resource")
-		for _, name := range []string{"mysql", "postgres", "mongodb"} {
+		for _, name := range []string{"mysql", "mysql-scope", "postgres", "mongodb"} {
 			cmd := exec.Command(
 				"kubectl",
 				"patch",
@@ -77,7 +77,7 @@ var _ = Describe("controller", Ordered, func() {
 			_, _ = utils.Run(cmd)
 		}
 		By("removing the DatabaseRequest resource")
-		for _, name := range []string{"mysql", "postgres", "seed"} {
+		for _, name := range []string{"mysql", "mysql-scope", "postgres", "seed"} {
 			cmd := exec.Command(
 				"kubectl",
 				"patch",
@@ -104,7 +104,7 @@ var _ = Describe("controller", Ordered, func() {
 		utils.UninstallMongoDB()
 
 		By("removing service and secret")
-		for _, name := range []string{"mysql", "postgres", "mongodb"} {
+		for _, name := range []string{"mysql", "mysql-scope", "postgres", "mongodb"} {
 			cmd = exec.Command(
 				"kubectl", "delete", "service", "-n", "default", "-l", "app.kubernetes.io/instance=databaserequest-"+name+"-sample")
 			_, _ = utils.Run(cmd)
@@ -178,7 +178,7 @@ var _ = Describe("controller", Ordered, func() {
 			EventuallyWithOffset(1, verifyControllerUp, time.Minute, time.Second).Should(Succeed())
 
 			By("validating that all database providers and database requests are working")
-			for _, name := range []string{"mysql", "postgres", "seed"} {
+			for _, name := range []string{"mysql", "mysql-scope", "postgres", "seed"} {
 				if name != "seed" {
 					By("creating a RelationalDatabaseProvider resource")
 					cmd = exec.Command(
@@ -221,6 +221,7 @@ var _ = Describe("controller", Ordered, func() {
 				By("creating a DatabaseRequest resource")
 				cmd = exec.Command(
 					"kubectl",
+					"-n", "default",
 					"apply",
 					"-f",
 					fmt.Sprintf("config/samples/crd_v1alpha1_databaserequest_%s.yaml", name),
@@ -231,6 +232,7 @@ var _ = Describe("controller", Ordered, func() {
 				By("validating that the DatabaseRequest resource is created")
 				cmd = exec.Command(
 					"kubectl",
+					"-n", "default",
 					"wait",
 					"--for=condition=Ready",
 					"databaserequest",
@@ -279,6 +281,7 @@ var _ = Describe("controller", Ordered, func() {
 				By("deleting the DatabaseRequest resource the database is getting deprovisioned")
 				cmd = exec.Command(
 					"kubectl",
+					"-n", "default",
 					"delete",
 					"databaserequest",
 					fmt.Sprintf("databaserequest-%s-sample", name),
@@ -325,6 +328,7 @@ var _ = Describe("controller", Ordered, func() {
 				dbrName := strings.ReplaceAll(name, "-", "_")
 				cmd = exec.Command(
 					"kubectl",
+					"-n", "default",
 					"apply",
 					"-f",
 					fmt.Sprintf("test/e2e/testdata/crd_v1alpha1_%s_databaserequest.yaml", dbrName),
@@ -335,6 +339,7 @@ var _ = Describe("controller", Ordered, func() {
 				By("validating that the DatabaseRequest resource is created but fails")
 				cmd = exec.Command(
 					"kubectl",
+					"-n", "default",
 					"get",
 					"databaserequest",
 					fmt.Sprintf("%s-databaserequest-sample", name),
@@ -389,6 +394,7 @@ var _ = Describe("controller", Ordered, func() {
 				By("deleting the DatabaseRequest resource the database is getting deprovisioned")
 				cmd = exec.Command(
 					"kubectl",
+					"-n", "default",
 					"delete",
 					"databaserequest",
 					fmt.Sprintf("%s-databaserequest-sample", name),
