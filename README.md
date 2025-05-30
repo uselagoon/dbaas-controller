@@ -2,6 +2,7 @@
 
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/10670/badge)](https://www.bestpractices.dev/projects/10670)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/uselagoon/dbaas-controller/badge)](https://securityscorecards.dev/viewer/?uri=github.com/uselagoon/dbaas-controller)
+[![coverage](https://raw.githubusercontent.com/uselagoon/dbaas-controller/badges/.badges/main/coverage.svg)](https://github.com/uselagoon/dbaas-controller/actions/workflows/coverage.yaml)
 
 ## Overview
 
