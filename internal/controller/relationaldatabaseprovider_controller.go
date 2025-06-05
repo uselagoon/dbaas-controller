@@ -329,12 +329,13 @@ type reldbConn struct {
 // getDSN constructs the DSN string for the MySQL or PostgreSQL connection.
 func (rc *reldbConn) getDSN(useDatabase bool) string {
 	dsn := ""
-	if rc.dbType == "mysql" {
+	switch rc.dbType {
+	case "mysql":
 		dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/", rc.username, rc.password, rc.hostname, rc.port)
 		if useDatabase {
 			dsn += rc.name
 		}
-	} else if rc.dbType == "postgres" {
+	case "postgres":
 		dsn = fmt.Sprintf(
 			"host=%s port=%d user=%s password=%s sslmode=disable",
 			rc.hostname, rc.port, rc.username, rc.password,

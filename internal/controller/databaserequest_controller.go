@@ -41,7 +41,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/uselagoon/dbaas-controller/api/v1alpha1"
 	crdv1alpha1 "github.com/uselagoon/dbaas-controller/api/v1alpha1"
 	"github.com/uselagoon/dbaas-controller/internal/database"
 )
@@ -187,7 +186,8 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// Note at the moment we only have one "primary" connection per database request
 		// Implementing additional users would require to extend the logic here
 		// check if the database request is already created and the secret and service exist
-		if databaseRequest.Spec.Type == mysqlType || databaseRequest.Spec.Type == postgresType {
+		switch databaseRequest.Spec.Type {
+		case mysqlType, postgresType:
 			logger.Info("Get relational database info")
 			// get the database info
 			var err error
@@ -196,9 +196,9 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				return r.handleError(
 					ctx, databaseRequest, fmt.Sprintf("get-%s-database-info", databaseRequest.Spec.Type), err, false)
 			}
-		} else if databaseRequest.Spec.Type == mongodbType {
+		case mongodbType:
 			logger.Info("Get mongodb database info")
-		} else {
+		default:
 			logger.Error(ErrInvalidDatabaseType, "Unsupported database type", "type", databaseRequest.Spec.Type)
 		}
 	}
@@ -453,7 +453,8 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 	// handle deletion logic
 	logger := log.FromContext(ctx)
 	if databaseRequest.Spec.Seed == nil && databaseRequest.Spec.DropDatabaseOnDelete {
-		if databaseRequest.Spec.Type == mysqlType || databaseRequest.Spec.Type == postgresType {
+		switch databaseRequest.Spec.Type {
+		case mysqlType, postgresType:
 			// handle relational database deletion
 			// Note at the moment we only have one "primary" connection per database request
 			// Implementing additional users would require to extend the logic here
@@ -461,10 +462,10 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 			if err := r.relDBDeletion(ctx, databaseRequest); err != nil {
 				return r.handleError(ctx, databaseRequest, fmt.Sprintf("%s-drop", databaseRequest.Spec.Type), err, false)
 			}
-		} else if databaseRequest.Spec.Type == mongodbType {
+		case mongodbType:
 			// handle mongodb deletion
 			logger.Info("Dropping MongoDB database")
-		} else {
+		default:
 			// this should never happen, but just in case
 			logger.Error(ErrInvalidDatabaseType, "Unsupported database type", "type", databaseRequest.Spec.Type)
 			return r.handleError(ctx, databaseRequest, "invalid-database-type", ErrInvalidDatabaseType, false)
@@ -515,7 +516,8 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 func (r *DatabaseRequestReconciler) createDatabase(
 	ctx context.Context, databaseRequest *crdv1alpha1.DatabaseRequest) error {
 	logger := log.FromContext(ctx)
-	if databaseRequest.Spec.Type == mysqlType || databaseRequest.Spec.Type == postgresType {
+	switch databaseRequest.Spec.Type {
+	case mysqlType, postgresType:
 		// handle relational database creation
 		// Note at the moment we only have one "primary" connection per database request
 		// Implementing additional users would require to extend the logic here
@@ -529,9 +531,9 @@ func (r *DatabaseRequestReconciler) createDatabase(
 		if databaseRequest.Status.DatabaseInfo == nil {
 			return fmt.Errorf("%s db creation failed due to missing database info", databaseRequest.Spec.Type)
 		}
-	} else if databaseRequest.Spec.Type == mongodbType {
+	case mongodbType:
 		logger.Info("Creating MongoDB database")
-	} else {
+	default:
 		// this should never happen, but just in case
 		logger.Error(ErrInvalidDatabaseType, "Unsupported database type", "type", databaseRequest.Spec.Type)
 		return fmt.Errorf("failed to create database: %w", ErrInvalidDatabaseType)
@@ -612,7 +614,7 @@ type dbInfo struct {
 
 // getSecretData returns the secret data for the database
 func (m *dbInfo) getSecretData(name, serviceName string) map[string][]byte {
-	name = strings.ToUpper(strings.Replace(name, "-", "_", -1))
+	name = strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
 	return map[string][]byte{
 		fmt.Sprintf("%s_USERNAME", strings.ToUpper(name)): []byte(m.userName),
 		fmt.Sprintf("%s_PASSWORD", strings.ToUpper(name)): []byte(m.password),
@@ -820,7 +822,7 @@ func (r *DatabaseRequestReconciler) relationalDatabaseOperation(
 type seedDatabaseInfo struct {
 	dbInfo              *dbInfo
 	conn                *reldbConn
-	databaseProviderRef *v1alpha1.DatabaseConnectionReference
+	databaseProviderRef *crdv1alpha1.DatabaseConnectionReference
 }
 
 // relationalDatabaseInfoFromSeed finds the relational database provider based on the seed secret
@@ -848,7 +850,7 @@ func (r *DatabaseRequestReconciler) relationalDatabaseInfoFromSeed(
 	}
 
 	var connection *crdv1alpha1.Connection
-	var databaseProviderRef *v1alpha1.DatabaseConnectionReference
+	var databaseProviderRef *crdv1alpha1.DatabaseConnectionReference
 	for _, dbProvider := range dbProviders.Items {
 		if dbProvider.Spec.Scope == scope && dbProvider.Spec.Type == dbType {
 			for _, dbConnection := range dbProvider.Spec.Connections {
