@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"math/rand"
 
-	_ "github.com/go-sql-driver/mysql"
 	md "github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
-	_ "github.com/lib/pq"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -117,7 +115,8 @@ func (ri *RelationalDatabaseImpl) Ping(ctx context.Context, dsn string, dbType s
 	}
 
 	if err := db.PingContext(ctx); err != nil {
-		if dbType == mysql {
+		switch dbType {
+		case mysql:
 			var driverErr *md.MySQLError
 			if errors.As(err, &driverErr) {
 				switch driverErr.Number {
@@ -129,7 +128,7 @@ func (ri *RelationalDatabaseImpl) Ping(ctx context.Context, dsn string, dbType s
 					return fmt.Errorf("failed to ping %s database: %w", dbType, err)
 				}
 			}
-		} else if dbType == postgres {
+		case postgres:
 			var driverErr *pq.Error
 			if errors.As(err, &driverErr) {
 				switch driverErr.Code {
@@ -175,17 +174,18 @@ func (ri *RelationalDatabaseImpl) Load(ctx context.Context, dsn string, dbType s
 	}
 
 	var totalLoad float64
-	if dbType == mysql {
+	switch dbType {
+	case mysql:
 		err = db.QueryRowContext(ctx, "SELECT data_length + index_length FROM information_schema.tables").Scan(&totalLoad)
 		if err != nil {
 			return 0, fmt.Errorf("load failed to get %s database load: %w", dbType, err)
 		}
-	} else if dbType == postgres {
+	case postgres:
 		err = db.QueryRowContext(ctx, "SELECT pg_database_size(current_database())").Scan(&totalLoad)
 		if err != nil {
 			return 0, fmt.Errorf("load failed to get %s database load: %w", dbType, err)
 		}
-	} else {
+	default:
 		return 0, fmt.Errorf("load failed to get %s database load: unsupported dbType", dbType)
 	}
 	// convert bytes to MB
@@ -204,7 +204,8 @@ func (ri *RelationalDatabaseImpl) Initialize(ctx context.Context, dsn string, db
 		return fmt.Errorf("initialize failed to open %s database: %w", dbType, err)
 	}
 
-	if dbType == mysql {
+	switch dbType {
+	case mysql:
 		_, err = db.ExecContext(ctx, "CREATE DATABASE IF NOT EXISTS dbaas_controller")
 		if err != nil {
 			return fmt.Errorf("initialize failed to create %s database: %w", dbType, err)
@@ -228,7 +229,7 @@ func (ri *RelationalDatabaseImpl) Initialize(ctx context.Context, dsn string, db
 		if err != nil {
 			return fmt.Errorf("initialize failed to create %s table: %w", dbType, err)
 		}
-	} else if dbType == postgres {
+	case postgres:
 		_, err := db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS dbaas_controller")
 		if err != nil {
 			return fmt.Errorf("initialize failed to create %s database: %w", dbType, err)
@@ -247,7 +248,7 @@ func (ri *RelationalDatabaseImpl) Initialize(ctx context.Context, dsn string, db
 		if err != nil {
 			return fmt.Errorf("initialize failed to create %s table: %w", dbType, err)
 		}
-	} else {
+	default:
 		return fmt.Errorf("initialize failed to initialize %s database: unsupported dbType", dbType)
 	}
 
@@ -267,7 +268,8 @@ func (ri *RelationalDatabaseImpl) CreateDatabase(
 	}
 
 	var info RelationalDatabaseInfo
-	if dbType == mysql {
+	switch dbType {
+	case mysql:
 		info, err = ri.databaseInfoMySQL(ctx, dsn, name, namespace)
 		if err != nil {
 			return info, fmt.Errorf("create %s database failed to get database info: %w", dbType, err)
@@ -301,7 +303,7 @@ func (ri *RelationalDatabaseImpl) CreateDatabase(
 		if err != nil {
 			return info, fmt.Errorf("create %s database error flushing privileges: %w", dbType, err)
 		}
-	} else if dbType == postgres {
+	case postgres:
 		info, err = ri.databaseInfoPostgreSQL(ctx, dsn, name, namespace)
 		if err != nil {
 			return info, fmt.Errorf("create database failed to get %s database info: %w", dbType, err)
@@ -342,7 +344,7 @@ func (ri *RelationalDatabaseImpl) CreateDatabase(
 			return info, fmt.Errorf(
 				"create %s database error in grant privileges in database `%s`: %w", dbType, info.Dbname, err)
 		}
-	} else {
+	default:
 		return RelationalDatabaseInfo{}, fmt.Errorf(
 			"create database failed to create %s database: unsupported dbType", dbType)
 	}
@@ -359,7 +361,8 @@ func (ri *RelationalDatabaseImpl) DropDatabase(ctx context.Context, dsn, name, n
 	}
 
 	info := RelationalDatabaseInfo{}
-	if dbType == mysql {
+	switch dbType {
+	case mysql:
 		info, err = ri.databaseInfoMySQL(ctx, dsn, name, namespace)
 		if err != nil {
 			return fmt.Errorf("drop database failed to get database info: %w", err)
@@ -379,7 +382,7 @@ func (ri *RelationalDatabaseImpl) DropDatabase(ctx context.Context, dsn, name, n
 		if err != nil {
 			return fmt.Errorf("drop database failed to flush privileges: %w", err)
 		}
-	} else if dbType == postgres {
+	case postgres:
 		info, err = ri.databaseInfoPostgreSQL(ctx, dsn, name, namespace)
 		if err != nil {
 			return fmt.Errorf("drop database failed to get database info: %w", err)
@@ -404,7 +407,7 @@ func (ri *RelationalDatabaseImpl) DropDatabase(ctx context.Context, dsn, name, n
 		if err != nil {
 			return fmt.Errorf("drop database failed to drop user: %w", err)
 		}
-	} else {
+	default:
 		return fmt.Errorf("drop database failed to drop %s database: unsupported dbType", dbType)
 	}
 	return nil
@@ -575,9 +578,10 @@ func (ri *RelationalDatabaseImpl) GetDatabaseInfo(
 	dsn, name, namespace, dbType string,
 ) (RelationalDatabaseInfo, error) {
 	log.FromContext(ctx).Info("Getting database", "dbType", dbType, "name", name, "namespace", namespace)
-	if dbType == "mysql" {
+	switch dbType {
+	case mysql:
 		return ri.databaseInfoMySQL(ctx, dsn, name, namespace)
-	} else if dbType == "postgres" {
+	case postgres:
 		return ri.databaseInfoPostgreSQL(ctx, dsn, name, namespace)
 	}
 	return RelationalDatabaseInfo{}, fmt.Errorf("get database failed to get %s database: unsupported dbType", dbType)
@@ -590,9 +594,10 @@ func (ri *RelationalDatabaseImpl) SetDatabaseInfo(
 	info RelationalDatabaseInfo,
 ) error {
 	log.FromContext(ctx).Info("Setting database", "dbType", dbType, "name", name, "namespace", namespace)
-	if dbType == "mysql" {
+	switch dbType {
+	case mysql:
 		return ri.insertUserInfoIntoMysql(ctx, dsn, name, namespace, info)
-	} else if dbType == "postgres" {
+	case postgres:
 		return ri.insertUserInfoIntoPostgreSQL(ctx, dsn, name, namespace, info)
 	}
 	return nil

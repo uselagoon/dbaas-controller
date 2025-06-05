@@ -22,7 +22,7 @@ import (
 	"os/exec"
 	"strings"
 
-	. "github.com/onsi/ginkgo/v2" //nolint:golint,revive
+	"github.com/onsi/ginkgo/v2"
 )
 
 const (
@@ -38,7 +38,7 @@ const (
 )
 
 func warnError(err error) {
-	fmt.Fprintf(GinkgoWriter, "warning: %v\n", err)
+	fmt.Fprintf(ginkgo.GinkgoWriter, "warning: %v\n", err)
 }
 
 // InstallRelationalDatabases installs both MySQL and PostgreSQL pods to be used for testing.
@@ -51,7 +51,7 @@ func InstallRelationalDatabases() error {
 	for _, yaml := range []string{mysqlYaml, postgresYaml} {
 		cmd := exec.Command("kubectl", "apply", "-f", yaml)
 		cmd.Dir = dir
-		fmt.Fprintf(GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
+		fmt.Fprintf(ginkgo.GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
 		go func() {
 			_, err := Run(cmd)
 			errChan <- err
@@ -73,7 +73,7 @@ func InstallMongoDB() error {
 	}
 	cmd := exec.Command("kubectl", "apply", "-f", "test/e2e/testdata/mongodb.yaml")
 	cmd.Dir = dir
-	fmt.Fprintf(GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
+	fmt.Fprintf(ginkgo.GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
 	_, err = Run(cmd)
 	return err
 }
@@ -88,7 +88,7 @@ func UninstallRelationalDatabases() {
 	for _, yaml := range []string{mysqlYaml, postgresYaml} {
 		cmd := exec.Command("kubectl", "delete", "-f", yaml)
 		cmd.Dir = dir
-		fmt.Fprintf(GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
+		fmt.Fprintf(ginkgo.GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
 		go func() {
 			_, err := Run(cmd)
 			errChan <- err
@@ -122,7 +122,7 @@ func InstallMySQL() error {
 	}
 	cmd := exec.Command("kubectl", "apply", "-f", mysqlYaml)
 	cmd.Dir = dir
-	fmt.Fprintf(GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
+	fmt.Fprintf(ginkgo.GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
 	_, err = Run(cmd)
 	// Note that we don't wait for the pod to be ready here. This is a good test for the controller
 	// to see if it can handle mysql server not being ready.
@@ -156,12 +156,12 @@ func Run(cmd *exec.Cmd) ([]byte, error) {
 	cmd.Dir = dir
 
 	if err := os.Chdir(cmd.Dir); err != nil {
-		fmt.Fprintf(GinkgoWriter, "chdir dir: %s\n", err)
+		fmt.Fprintf(ginkgo.GinkgoWriter, "chdir dir: %s\n", err)
 	}
 
 	cmd.Env = append(os.Environ(), "GO111MODULE=on")
 	command := strings.Join(cmd.Args, " ")
-	fmt.Fprintf(GinkgoWriter, "running: %s\n", command)
+	fmt.Fprintf(ginkgo.GinkgoWriter, "running: %s\n", command)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return output, fmt.Errorf("%s failed with error: (%v) %s", command, err, string(output))
@@ -239,6 +239,6 @@ func GetProjectDir() (string, error) {
 	if err != nil {
 		return wd, err
 	}
-	wd = strings.Replace(wd, "/test/e2e", "", -1)
+	wd = strings.ReplaceAll(wd, "/test/e2e", "")
 	return wd, nil
 }
