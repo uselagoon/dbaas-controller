@@ -1,5 +1,9 @@
 # DBaaS Controller
 
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/10670/badge)](https://www.bestpractices.dev/projects/10670)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/uselagoon/dbaas-controller/badge)](https://securityscorecards.dev/viewer/?uri=github.com/uselagoon/dbaas-controller)
+[![coverage](https://raw.githubusercontent.com/uselagoon/dbaas-controller/badges/.badges/main/coverage.svg)](https://github.com/uselagoon/dbaas-controller/actions/workflows/coverage.yaml)
+
 ## Overview
 
 The dbaas-controller is designed to be used by Lagoon, specifically focusing on provisioning database access for Lagoon workloads. The dbaas-controller aims to facilitate easier updates, migrations, and overall management of database resources in Lagoon environments.
