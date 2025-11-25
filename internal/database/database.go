@@ -337,6 +337,14 @@ func (ri *RelationalDatabaseImpl) CreateDatabase(
 			}
 		}
 
+		// Change database owner
+		if _, err := db.Exec(
+			fmt.Sprintf("ALTER DATABASE \"%s\" OWNER TO \"%s\";", info.Dbname, info.Username),
+		); err != nil {
+			return info, fmt.Errorf(
+				"create %s database error in change owner of database `%s`: %w", dbType, info.Dbname, err)
+		}
+
 		// Grant privileges
 		if _, err := db.Exec(
 			fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE \"%s\" TO \"%s\"", info.Dbname, info.Username),
