@@ -10,5 +10,5 @@ metadata:
   name: databaserequest-mysql-sample
 spec:
   name: first-mysql-db
-  scope: development
+  selector: development
   type: mysql

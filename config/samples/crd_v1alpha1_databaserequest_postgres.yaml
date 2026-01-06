@@ -10,5 +10,5 @@ metadata:
   name: databaserequest-postgres-sample
 spec:
   name: first-postgres-db
-  scope: development
+  selector: development
   type: postgres

@@ -7,7 +7,7 @@ metadata:
   name: relationaldatabaseprovider-mysql-scope-sample
 spec:
   type: mysql
-  scope: vip-development
+  selector: vip-development
   connections:
     - name: primary-test-mysql-connection
       hostname: mysql-service.mysql

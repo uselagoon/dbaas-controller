@@ -48,7 +48,7 @@ var (
 			Name: "mongodbprovider_reconcile_error_total",
 			Help: "The total number of reconciled mongodb providers errors",
 		},
-		[]string{"name", "scope", "error"},
+		[]string{"name", "selector", "error"},
 	)
 
 	// promMongoDBProviderStatus is the gauge for the mongodb provider status
@@ -57,7 +57,7 @@ var (
 			Name: "mongodbprovider_status",
 			Help: "The status of the mongodb provider",
 		},
-		[]string{"name", "scope"},
+		[]string{"name", "selector"},
 	)
 
 	// promMongoDBProviderConnectionVersion is the gauge for the mongodb provider connection version
@@ -66,7 +66,7 @@ var (
 			Name: "mongodbprovider_connection_version",
 			Help: "The version of the mongodb provider connection",
 		},
-		[]string{"name", "scope", "hostname", "username", "version"},
+		[]string{"name", "selector", "hostname", "username", "version"},
 	)
 )
 
@@ -105,7 +105,7 @@ func (r *MongoDBProviderReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		promMongoDBProviderReconcileErrorCounter.WithLabelValues(req.Name, "", "get-mongodbprovider").Inc()
 		return ctrl.Result{}, err
 	}
-	logger = logger.WithValues("scope", instance.Spec.Scope)
+	logger = logger.WithValues("selector", instance.Spec.Selector)
 	log.IntoContext(ctx, logger)
 	if instance.DeletionTimestamp != nil && !instance.DeletionTimestamp.IsZero() {
 		// The object is being deleted
@@ -191,7 +191,7 @@ func (r *MongoDBProviderReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				Status:          "unavailable",
 			})
 			promMongoDBProviderConnectionVersion.WithLabelValues(
-				conn.options.Name, instance.Spec.Scope, conn.options.Hostname, conn.options.Username, "",
+				conn.options.Name, instance.Spec.Selector, conn.options.Hostname, conn.options.Username, "",
 			).Set(0)
 			logger.Error(err, "Failed to ping MongoDB", "hostname", conn.options.Hostname)
 			continue
@@ -207,7 +207,7 @@ func (r *MongoDBProviderReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				Status:          "unavailable",
 			})
 			promMongoDBProviderConnectionVersion.WithLabelValues(
-				conn.options.Name, instance.Spec.Scope, conn.options.Hostname, conn.options.Username, version,
+				conn.options.Name, instance.Spec.Selector, conn.options.Hostname, conn.options.Username, version,
 			).Set(0)
 			logger.Error(err, "Failed to get MongoDB version", "hostname", conn.options.Hostname)
 			continue
@@ -223,11 +223,11 @@ func (r *MongoDBProviderReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if conn.enabled {
 			foundEnabledDatabase = true
 			promMongoDBProviderConnectionVersion.WithLabelValues(
-				conn.options.Name, instance.Spec.Scope, conn.options.Hostname, conn.options.Username, version,
+				conn.options.Name, instance.Spec.Selector, conn.options.Hostname, conn.options.Username, version,
 			).Set(1)
 		} else {
 			promMongoDBProviderConnectionVersion.WithLabelValues(
-				conn.options.Name, instance.Spec.Scope, conn.options.Hostname, conn.options.Username, version,
+				conn.options.Name, instance.Spec.Selector, conn.options.Hostname, conn.options.Username, version,
 			).Set(0)
 		}
 	}
@@ -257,13 +257,13 @@ func (r *MongoDBProviderReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// update the status
 	if err := r.Status().Update(ctx, instance); err != nil {
 		promMongoDBProviderReconcileErrorCounter.WithLabelValues(
-			req.Name, instance.Spec.Scope, "update-status").Inc()
-		promMongoDBProviderStatus.WithLabelValues(req.Name, instance.Spec.Scope).Set(0)
+			req.Name, instance.Spec.Selector, "update-status").Inc()
+		promMongoDBProviderStatus.WithLabelValues(req.Name, instance.Spec.Selector).Set(0)
 		return ctrl.Result{}, err
 	}
 
 	r.Recorder.Event(instance, v1.EventTypeNormal, "Reconciled", "MongoDBProvider reconciled")
-	promMongoDBProviderStatus.WithLabelValues(req.Name, instance.Spec.Scope).Set(1)
+	promMongoDBProviderStatus.WithLabelValues(req.Name, instance.Spec.Selector).Set(1)
 	return ctrl.Result{}, nil
 }
 
@@ -273,8 +273,8 @@ func (r *MongoDBProviderReconciler) handleError(
 	promErr string,
 	err error,
 ) (ctrl.Result, error) {
-	promMongoDBProviderReconcileErrorCounter.WithLabelValues(instance.Name, instance.Spec.Scope, promErr).Inc()
-	promMongoDBProviderStatus.WithLabelValues(instance.Name, instance.Spec.Scope).Set(0)
+	promMongoDBProviderReconcileErrorCounter.WithLabelValues(instance.Name, instance.Spec.Selector, promErr).Inc()
+	promMongoDBProviderStatus.WithLabelValues(instance.Name, instance.Spec.Selector).Set(0)
 	r.Recorder.Event(instance, v1.EventTypeWarning, errTypeToEventReason(promErr), err.Error())
 
 	// set the status condition
@@ -287,7 +287,7 @@ func (r *MongoDBProviderReconciler) handleError(
 
 	// update the status
 	if err := r.Status().Update(ctx, instance); err != nil {
-		promMongoDBProviderReconcileErrorCounter.WithLabelValues(instance.Name, instance.Spec.Scope, "update-status").Inc()
+		promMongoDBProviderReconcileErrorCounter.WithLabelValues(instance.Name, instance.Spec.Selector, "update-status").Inc()
 		log.FromContext(ctx).Error(err, "Failed to update status")
 		return ctrl.Result{}, err
 	}

@@ -74,7 +74,7 @@ var _ = Describe("MongoDBProvider Controller", func() {
 						Namespace: "default",
 					},
 					Spec: crdv1alpha1.MongoDBProviderSpec{
-						Scope: "development",
+						Selector: "development",
 						Connections: []crdv1alpha1.MongoDBConnection{
 							{
 								Name: "test-mongodb-connection",

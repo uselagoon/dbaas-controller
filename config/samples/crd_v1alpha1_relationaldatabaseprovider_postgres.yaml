@@ -7,7 +7,7 @@ metadata:
   name: relationaldatabaseprovider-postgres-sample
 spec:
   type: postgres
-  scope: development
+  selector: development
   connections:
     - name: primary-test-postgres-connection
       hostname: postgres-service.postgres

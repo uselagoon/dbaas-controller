@@ -49,7 +49,7 @@ var (
 			Name: "relationaldatabaseprovider_reconcile_error_total",
 			Help: "The total number of reconciled relational database providers errors",
 		},
-		[]string{"type", "name", "scope", "error"},
+		[]string{"type", "name", "selector", "error"},
 	)
 
 	// promRelationalDatabaseProviderStatus is the gauge for the relational database provider status
@@ -58,7 +58,7 @@ var (
 			Name: "relationaldatabaseprovider_status",
 			Help: "The status of the relational database provider",
 		},
-		[]string{"type", "name", "scope"},
+		[]string{"type", "name", "selector"},
 	)
 
 	// promRelationalDatabaseProviderConnectionVersion is the gauge for the relational database provider connection version
@@ -67,7 +67,7 @@ var (
 			Name: "relationaldatabaseprovider_connection_version",
 			Help: "The version of the relational database provider connection",
 		},
-		[]string{"type", "name", "scope", "hostname", "username", "version"},
+		[]string{"type", "name", "selector", "hostname", "username", "version"},
 	)
 )
 
@@ -103,7 +103,7 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 			"", req.Name, "", "get-relationaldbprovider").Inc()
 		return ctrl.Result{}, err
 	}
-	logger = logger.WithValues("type", instance.Spec.Type, "scope", instance.Spec.Scope)
+	logger = logger.WithValues("type", instance.Spec.Type, "selector", instance.Spec.Selector)
 	if instance.DeletionTimestamp != nil && !instance.DeletionTimestamp.IsZero() {
 		// The object is being deleted
 		// To be discussed whether we need to delete all the database requests using this provider...
@@ -193,7 +193,7 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 				Enabled:  conn.enabled,
 			})
 			promRelationalDatabaseProviderConnectionVersion.WithLabelValues(
-				instance.Spec.Type, req.Name, instance.Spec.Scope, conn.hostname, conn.username, "").Set(0)
+				instance.Spec.Type, req.Name, instance.Spec.Selector, conn.hostname, conn.username, "").Set(0)
 			logger.Error(err, "Failed to ping the database", "hostname", conn.hostname)
 			continue
 		}
@@ -208,7 +208,7 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 			})
 			logger.Error(err, "Failed to get the database version", "hostname", conn.hostname)
 			promRelationalDatabaseProviderConnectionVersion.WithLabelValues(
-				instance.Spec.Type, req.Name, instance.Spec.Scope, conn.hostname, conn.username, version).Set(0)
+				instance.Spec.Type, req.Name, instance.Spec.Selector, conn.hostname, conn.username, version).Set(0)
 			continue
 		}
 
@@ -223,7 +223,7 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 				Enabled:  conn.enabled,
 			})
 			promRelationalDatabaseProviderConnectionVersion.WithLabelValues(
-				instance.Spec.Type, req.Name, instance.Spec.Scope, conn.hostname, conn.username, version).Set(0)
+				instance.Spec.Type, req.Name, instance.Spec.Selector, conn.hostname, conn.username, version).Set(0)
 			continue
 		}
 
@@ -237,10 +237,10 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 		if conn.enabled {
 			foundEnabledDatabase = true
 			promRelationalDatabaseProviderConnectionVersion.WithLabelValues(
-				instance.Spec.Type, req.Name, instance.Spec.Scope, conn.hostname, conn.username, version).Set(1)
+				instance.Spec.Type, req.Name, instance.Spec.Selector, conn.hostname, conn.username, version).Set(1)
 		} else {
 			promRelationalDatabaseProviderConnectionVersion.WithLabelValues(
-				instance.Spec.Type, req.Name, instance.Spec.Scope, conn.hostname, conn.username, version).Set(0)
+				instance.Spec.Type, req.Name, instance.Spec.Selector, conn.hostname, conn.username, version).Set(0)
 		}
 	}
 
@@ -274,13 +274,13 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 	// update the status
 	if err := r.Status().Update(ctx, instance); err != nil {
 		promRelationalDatabaseProviderReconcileErrorCounter.WithLabelValues(
-			instance.Spec.Type, req.Name, instance.Spec.Scope, "update-status").Inc()
-		promRelationalDatabaseProviderStatus.WithLabelValues(instance.Spec.Type, req.Name, instance.Spec.Scope).Set(0)
+			instance.Spec.Type, req.Name, instance.Spec.Selector, "update-status").Inc()
+		promRelationalDatabaseProviderStatus.WithLabelValues(instance.Spec.Type, req.Name, instance.Spec.Selector).Set(0)
 		return ctrl.Result{}, err
 	}
 
 	r.Recorder.Event(instance, "Normal", "Reconciled", "RelationalDatabaseProvider reconciled")
-	promRelationalDatabaseProviderStatus.WithLabelValues(instance.Spec.Type, req.Name, instance.Spec.Scope).Set(1)
+	promRelationalDatabaseProviderStatus.WithLabelValues(instance.Spec.Type, req.Name, instance.Spec.Selector).Set(1)
 	return ctrl.Result{}, nil
 }
 
@@ -292,8 +292,8 @@ func (r *RelationalDatabaseProviderReconciler) handleError(
 	err error,
 ) (ctrl.Result, error) {
 	promRelationalDatabaseProviderReconcileErrorCounter.WithLabelValues(
-		instance.Spec.Type, instance.Name, instance.Spec.Scope, promErr).Inc()
-	promRelationalDatabaseProviderStatus.WithLabelValues(instance.Spec.Type, instance.Name, instance.Spec.Scope).Set(0)
+		instance.Spec.Type, instance.Name, instance.Spec.Selector, promErr).Inc()
+	promRelationalDatabaseProviderStatus.WithLabelValues(instance.Spec.Type, instance.Name, instance.Spec.Selector).Set(0)
 	r.Recorder.Event(instance, v1.EventTypeWarning, errTypeToEventReason(promErr), err.Error())
 
 	// set the status condition to false
@@ -307,7 +307,7 @@ func (r *RelationalDatabaseProviderReconciler) handleError(
 	// update the status
 	if err := r.Status().Update(ctx, instance); err != nil {
 		promRelationalDatabaseProviderReconcileErrorCounter.WithLabelValues(
-			instance.Spec.Type, instance.Name, instance.Spec.Scope, "update-status").Inc()
+			instance.Spec.Type, instance.Name, instance.Spec.Selector, "update-status").Inc()
 		log.FromContext(ctx).Error(err, "Failed to update status")
 	}
 

@@ -60,8 +60,8 @@ type DatabaseRequestSpec struct {
 
 	//+kubebuilder:required
 	//+kubebuilder:validation:Required
-	// Scope is the scope of the database request, this is used to select a provider from a pool of scopes
-	Scope string `json:"scope"`
+	// Selector is the name of the database request, this is used to select a provider from a pool of providers with the same selector
+	Selector string `json:"selector"`
 
 	//+kubebuilder:required
 	//+kubebuilder:validation:Required

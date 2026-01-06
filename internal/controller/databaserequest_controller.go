@@ -67,7 +67,7 @@ var (
 			Name: "databaserequest_reconcile_error_total",
 			Help: "The total number of reconciled database requests errors",
 		},
-		[]string{"name", "namespace", "scope", "type", "username", "databasename", "error"},
+		[]string{"name", "namespace", "selector", "type", "username", "databasename", "error"},
 	)
 
 	// promDatabaseRequestReconcileStatus is the status of the reconciled database requests
@@ -76,7 +76,7 @@ var (
 			Name: "databaserequest_reconcile_status",
 			Help: "The status of the reconciled database requests",
 		},
-		[]string{"name", "namespace", "scope", "type", "username", "databasename"},
+		[]string{"name", "namespace", "selector", "type", "username", "databasename"},
 	)
 )
 
@@ -125,7 +125,7 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	logger = logger.WithValues("scope", databaseRequest.Spec.Scope, "type", databaseRequest.Spec.Type)
+	logger = logger.WithValues("selector", databaseRequest.Spec.Selector, "type", databaseRequest.Spec.Type)
 	log.IntoContext(ctx, logger)
 
 	if databaseRequest.DeletionTimestamp != nil && !databaseRequest.DeletionTimestamp.IsZero() {
@@ -315,7 +315,7 @@ func (r *DatabaseRequestReconciler) handleSeed(
 		ctx,
 		databaseRequest.Spec.Seed,
 		databaseRequest.Spec.Type,
-		databaseRequest.Spec.Scope,
+		databaseRequest.Spec.Selector,
 	)
 	if err != nil {
 		return nil, err
@@ -567,7 +567,7 @@ func promLabels(databaseRequest *crdv1alpha1.DatabaseRequest, withError string) 
 	labels := prometheus.Labels{
 		"name":         databaseRequest.Name,
 		"namespace":    databaseRequest.Namespace,
-		"scope":        databaseRequest.Spec.Scope,
+		"selector":     databaseRequest.Spec.Selector,
 		"type":         databaseRequest.Spec.Type,
 		"username":     username,
 		"databasename": databaseName,
@@ -676,8 +676,8 @@ func (r *DatabaseRequestReconciler) relationalDatabaseOperation(
 
 	// get the database provider, for info and drop we use the reference which is already set on the database request
 	// if not we error out.
-	// For create we list all database providers and check if the scope matches and if
-	// there are more than one provider with the same scope, we select the one with lower load.
+	// For create we list all database providers and check if the selector matches and if
+	// there are more than one provider with the same selector, we select the one with lower load.
 	databaseProvider := &crdv1alpha1.RelationalDatabaseProvider{}
 	connectionName := ""
 	if operation == create {
@@ -830,7 +830,7 @@ func (r *DatabaseRequestReconciler) relationalDatabaseInfoFromSeed(
 	ctx context.Context,
 	seed *v1.SecretReference,
 	dbType string,
-	scope string,
+	selector string,
 ) (*seedDatabaseInfo, error) {
 	dbInfo, err := r.seedDatabase(ctx, seed)
 	if err != nil {
@@ -852,7 +852,7 @@ func (r *DatabaseRequestReconciler) relationalDatabaseInfoFromSeed(
 	var connection *crdv1alpha1.Connection
 	var databaseProviderRef *crdv1alpha1.DatabaseConnectionReference
 	for _, dbProvider := range dbProviders.Items {
-		if dbProvider.Spec.Scope == scope && dbProvider.Spec.Type == dbType {
+		if dbProvider.Spec.Selector == selector && dbProvider.Spec.Type == dbType {
 			for _, dbConnection := range dbProvider.Spec.Connections {
 				if dbConnection.Enabled && dbConnection.Hostname == dbInfo.hostName &&
 					dbConnection.Port == dbInfo.port {
@@ -904,7 +904,7 @@ func (r *DatabaseRequestReconciler) relationalDatabaseInfoFromSeed(
 	return &seedDatabaseInfo{dbInfo: dbInfo, conn: conn, databaseProviderRef: databaseProviderRef}, nil
 }
 
-// findRelationalDatabaseProvider finds the relational database provider with the same scope and the lower load
+// findRelationalDatabaseProvider finds the relational database provider with the same selector and the lower load
 // returns the provider, connection name and an error
 func (r *DatabaseRequestReconciler) findRelationalDatabaseProvider(
 	ctx context.Context,
@@ -917,13 +917,13 @@ func (r *DatabaseRequestReconciler) findRelationalDatabaseProvider(
 		)
 	}
 
-	// find the provider with the same scope
+	// find the provider with the same selector
 	// set load to the max int value to find the provider with the lower
 	load := int(^uint(0) >> 1)
 	var provider *crdv1alpha1.RelationalDatabaseProvider
 	var connName string
 	for _, dbProvider := range dbProviders.Items {
-		if dbProvider.Spec.Scope == databaseRequest.Spec.Scope && dbProvider.Spec.Type == databaseRequest.Spec.Type {
+		if dbProvider.Spec.Selector == databaseRequest.Spec.Selector && dbProvider.Spec.Type == databaseRequest.Spec.Type {
 			log.FromContext(ctx).Info("Found provider", "provider", dbProvider.Name)
 			for _, dbConnection := range dbProvider.Spec.Connections {
 				if dbConnection.Enabled {
