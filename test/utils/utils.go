@@ -37,6 +37,26 @@ const (
 	postgresYaml = "test/e2e/testdata/postgres.yaml"
 )
 
+var kubectlPath, kindPath string
+
+func init() {
+	if v, ok := os.LookupEnv("KIND_PATH"); ok {
+		kindPath = v
+	} else {
+		kindPath = "kind"
+	}
+	if v, ok := os.LookupEnv("KUBECTL_PATH"); ok {
+		kubectlPath = v
+	} else {
+		kubectlPath = "kubectl"
+	}
+	fmt.Println(kubectlPath, kindPath)
+}
+
+func Kubectl() string {
+	return kubectlPath
+}
+
 func warnError(err error) {
 	fmt.Fprintf(ginkgo.GinkgoWriter, "warning: %v\n", err)
 }
@@ -49,7 +69,7 @@ func InstallRelationalDatabases() error {
 	}
 	errChan := make(chan error, 2)
 	for _, yaml := range []string{mysqlYaml, postgresYaml} {
-		cmd := exec.Command("kubectl", "apply", "-f", yaml)
+		cmd := exec.Command(kubectlPath, "apply", "-f", yaml)
 		cmd.Dir = dir
 		fmt.Fprintf(ginkgo.GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
 		go func() {
@@ -71,7 +91,7 @@ func InstallMongoDB() error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command("kubectl", "apply", "-f", "test/e2e/testdata/mongodb.yaml")
+	cmd := exec.Command(kubectlPath, "apply", "-f", "test/e2e/testdata/mongodb.yaml")
 	cmd.Dir = dir
 	fmt.Fprintf(ginkgo.GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
 	_, err = Run(cmd)
@@ -86,7 +106,7 @@ func UninstallRelationalDatabases() {
 	}
 	errChan := make(chan error, 2)
 	for _, yaml := range []string{mysqlYaml, postgresYaml} {
-		cmd := exec.Command("kubectl", "delete", "-f", yaml)
+		cmd := exec.Command(kubectlPath, "delete", "-f", yaml)
 		cmd.Dir = dir
 		fmt.Fprintf(ginkgo.GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
 		go func() {
@@ -107,7 +127,7 @@ func UninstallMongoDB() {
 	if err != nil {
 		warnError(err)
 	}
-	cmd := exec.Command("kubectl", "delete", "-f", "test/e2e/testdata/mongodb.yaml")
+	cmd := exec.Command(kubectlPath, "delete", "-f", "test/e2e/testdata/mongodb.yaml")
 	cmd.Dir = dir
 	if _, err := Run(cmd); err != nil {
 		warnError(err)
@@ -120,7 +140,7 @@ func InstallMySQL() error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command("kubectl", "apply", "-f", mysqlYaml)
+	cmd := exec.Command(kubectlPath, "apply", "-f", mysqlYaml)
 	cmd.Dir = dir
 	fmt.Fprintf(ginkgo.GinkgoWriter, "running: %s in directory: %s\n", strings.Join(cmd.Args, " "), dir)
 	_, err = Run(cmd)
@@ -135,7 +155,7 @@ func UninstallMySQLPod() {
 	if err != nil {
 		warnError(err)
 	}
-	cmd := exec.Command("kubectl", "delete", "-f", mysqlYaml)
+	cmd := exec.Command(kubectlPath, "delete", "-f", mysqlYaml)
 	cmd.Dir = dir
 	if _, err := Run(cmd); err != nil {
 		warnError(err)
@@ -145,7 +165,7 @@ func UninstallMySQLPod() {
 // InstallPrometheusOperator installs the prometheus Operator to be used to export the enabled metrics.
 func InstallPrometheusOperator() error {
 	url := fmt.Sprintf(prometheusOperatorURL, prometheusOperatorVersion)
-	cmd := exec.Command("kubectl", "create", "-f", url)
+	cmd := exec.Command(kubectlPath, "create", "-f", url)
 	_, err := Run(cmd)
 	return err
 }
@@ -173,7 +193,7 @@ func Run(cmd *exec.Cmd) ([]byte, error) {
 // UninstallPrometheusOperator uninstalls the prometheus
 func UninstallPrometheusOperator() {
 	url := fmt.Sprintf(prometheusOperatorURL, prometheusOperatorVersion)
-	cmd := exec.Command("kubectl", "delete", "-f", url)
+	cmd := exec.Command(kubectlPath, "delete", "-f", url)
 	if _, err := Run(cmd); err != nil {
 		warnError(err)
 	}
@@ -182,7 +202,7 @@ func UninstallPrometheusOperator() {
 // UninstallCertManager uninstalls the cert manager
 func UninstallCertManager() {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
-	cmd := exec.Command("kubectl", "delete", "-f", url)
+	cmd := exec.Command(kubectlPath, "delete", "-f", url)
 	if _, err := Run(cmd); err != nil {
 		warnError(err)
 	}
@@ -191,13 +211,13 @@ func UninstallCertManager() {
 // InstallCertManager installs the cert manager bundle.
 func InstallCertManager() error {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
-	cmd := exec.Command("kubectl", "apply", "-f", url)
+	cmd := exec.Command(kubectlPath, "apply", "-f", url)
 	if _, err := Run(cmd); err != nil {
 		return err
 	}
 	// Wait for cert-manager-webhook to be ready, which can take time if cert-manager
 	// was re-installed after uninstalling on a cluster.
-	cmd = exec.Command("kubectl", "wait", "deployment.apps/cert-manager-webhook",
+	cmd = exec.Command(kubectlPath, "wait", "deployment.apps/cert-manager-webhook",
 		"--for", "condition=Available",
 		"--namespace", "cert-manager",
 		"--timeout", "5m",
@@ -209,12 +229,12 @@ func InstallCertManager() error {
 
 // LoadImageToKindCluster loads a local docker image to the kind cluster
 func LoadImageToKindClusterWithName(name string) error {
-	cluster := "kind"
+	cluster := kindPath
 	if v, ok := os.LookupEnv("KIND_CLUSTER"); ok {
 		cluster = v
 	}
 	kindOptions := []string{"load", "docker-image", name, "--name", cluster}
-	cmd := exec.Command("kind", kindOptions...)
+	cmd := exec.Command(kindPath, kindOptions...)
 	_, err := Run(cmd)
 	return err
 }
