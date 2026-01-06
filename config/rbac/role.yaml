@@ -15,17 +15,6 @@ rules:
   - ""
   resources:
   - secrets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - services
   verbs:
   - create
@@ -39,57 +28,7 @@ rules:
   - crd.lagoon.sh
   resources:
   - databaserequests
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - crd.lagoon.sh
-  resources:
-  - databaserequests/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - crd.lagoon.sh
-  resources:
-  - databaserequests/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - crd.lagoon.sh
-  resources:
   - mongodbproviders
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - crd.lagoon.sh
-  resources:
-  - mongodbproviders/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - crd.lagoon.sh
-  resources:
-  - mongodbproviders/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - crd.lagoon.sh
-  resources:
   - relationaldatabaseproviders
   verbs:
   - create
@@ -102,12 +41,16 @@ rules:
 - apiGroups:
   - crd.lagoon.sh
   resources:
+  - databaserequests/finalizers
+  - mongodbproviders/finalizers
   - relationaldatabaseproviders/finalizers
   verbs:
   - update
 - apiGroups:
   - crd.lagoon.sh
   resources:
+  - databaserequests/status
+  - mongodbproviders/status
   - relationaldatabaseproviders/status
   verbs:
   - get
