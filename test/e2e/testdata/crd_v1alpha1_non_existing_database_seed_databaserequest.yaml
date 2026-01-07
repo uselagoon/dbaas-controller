@@ -13,5 +13,5 @@ spec:
     name: non-existing-database-seed-secret
     namespace: default
   name: non-existing-database-seed-mysql-db
-  scope: development
+  selector: development
   type: mysql

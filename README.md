@@ -83,7 +83,7 @@ Use the status connectionStatus field to check the status of the MySQL connectio
 ### RelationalDatabaseProvider Spec Fields
 
 - kind (required): The type of database provider, which can be either mysql or postgresql.
-- scope (required): Defines the scope of the database request, which influences the environment setup. Valid values are production, development, and custom. Defaults to development if not specified.
+- selector (required): Defines the selector of the database request, which influences the environment setup. Valid values are production, development, and custom. Defaults to development if not specified.
 - connections (required): A list of `connection` objects that detail the connection parameters to MySQL or PostgreSQL databases. At least one connection must be defined.
 
 - connection Fields
@@ -116,7 +116,7 @@ metadata:
   name: example-mysql-provider
 spec:
   kind: mysql
-  scope: development
+  selector: development
   mysqlConnections:
     - name: primary-db
       hostname: primary-db.example.com
@@ -130,12 +130,12 @@ spec:
 
 ## DatabaseRequest CRD Documentation
 
-The `DatabaseRequest` Custom Resource Definition (CRD) provides a mechanism for requesting database instances within a Kubernetes cluster. This resource allows lagoon to specify their requirements for a database, including the type, scope, and optional parameters such as seeding data, additional users, and database connection references. This documentation outlines the structure and functionality of the `DatabaseRequest` resource to facilitate its usage.
+The `DatabaseRequest` Custom Resource Definition (CRD) provides a mechanism for requesting database instances within a Kubernetes cluster. This resource allows lagoon to specify their requirements for a database, including the type, selector, and optional parameters such as seeding data, additional users, and database connection references. This documentation outlines the structure and functionality of the `DatabaseRequest` resource to facilitate its usage.
 
 ### DatabaseRequest Spec Fields
 
 - name (required): Defines the intended service name for the database. This field is required and must be unique within the namespace.
-- scope (required): Defines the intended use of the requested database. It helps in configuring the database appropriately for its intended environment. Valid options are production, development, and custom. The default value is development.
+- selector (required): Defines the intended use of the requested database. It helps in configuring the database appropriately for its intended environment. Valid options are production, development, and custom. The default value is development.
 - type (required): Specifies the type of database requested. Supported types are mysql, mariadb, postgres, and mongodb.
 - seed (optional): A reference to a local Kubernetes secret within the same namespace that contains data used for seeding the database. This field is optional and intended for initial database setup.
 - additionalUsers (optional): Specifies the creation of additional database users.
@@ -162,7 +162,7 @@ kind: DatabaseRequest
 metadata:
   name: example-database-request
 spec:
-  scope: development
+  selector: development
   type: mysql
   additionalUsers:
     type: read-write

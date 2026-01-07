@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: mongodbprovider-sample
 spec:
-  scope: development
+  selector: development
   connections:
     - name: primary-test-mongodb-connection
       hostname: mongodb-service.mongodb

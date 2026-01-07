@@ -13,5 +13,5 @@ spec:
   seed:
     name: seed-mysql-secret
     namespace: default
-  scope: development
+  selector: development
   type: mysql

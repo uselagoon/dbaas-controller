@@ -100,9 +100,10 @@ spec:
                   type: object
                 minItems: 1
                 type: array
-              scope:
-                description: Scope is the scope of the database request, this is used
-                  to select a provider from a pool of scopes
+              selector:
+                description: Selector is the name of the database request, this is
+                  used to select a provider from a pool of providers with the same
+                  selector
                 type: string
               type:
                 description: |-
@@ -114,7 +115,7 @@ spec:
                 type: string
             required:
             - connections
-            - scope
+            - selector
             - type
             type: object
           status:

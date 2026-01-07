@@ -10,5 +10,5 @@ metadata:
   name: databaserequest-mysql-scope-sample
 spec:
   name: first-mysql-scope-db
-  scope: vip-development
+  selector: vip-development
   type: mysql

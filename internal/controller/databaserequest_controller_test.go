@@ -75,8 +75,8 @@ var _ = Describe("DatabaseRequest Controller", func() {
 						Name: dbMySQLProviderResource,
 					},
 					Spec: crdv1alpha1.RelationalDatabaseProviderSpec{
-						Type:  "mysql",
-						Scope: "development",
+						Type:     "mysql",
+						Selector: "development",
 						Connections: []crdv1alpha1.Connection{
 							{
 								Name:     "test-connection",
@@ -107,7 +107,7 @@ var _ = Describe("DatabaseRequest Controller", func() {
 						Namespace: "default",
 					},
 					Spec: crdv1alpha1.DatabaseRequestSpec{
-						Scope:                "development",
+						Selector:             "development",
 						Type:                 "mysql",
 						Name:                 "mysql-test-database",
 						DropDatabaseOnDelete: false,

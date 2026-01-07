@@ -74,8 +74,8 @@ var _ = Describe("RelationalDatabaseProvider Controller", func() {
 						Namespace: "default",
 					},
 					Spec: crdv1alpha1.RelationalDatabaseProviderSpec{
-						Type:  "mysql",
-						Scope: "custom",
+						Type:     "mysql",
+						Selector: "custom",
 						Connections: []crdv1alpha1.Connection{
 							{
 								Name:     "test-connection",
