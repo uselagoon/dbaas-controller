@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -74,7 +74,7 @@ var (
 type MongoDBProviderReconciler struct {
 	client.Client
 	Scheme        *runtime.Scheme
-	Recorder      record.EventRecorder
+	Recorder      events.EventRecorder
 	MongoDBClient mongodb.MongoDBInterface
 }
 
@@ -124,7 +124,7 @@ func (r *MongoDBProviderReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if instance.Status.Conditions != nil && meta.IsStatusConditionTrue(instance.Status.Conditions, "Ready") {
 		if instance.Status.ObservedGeneration >= instance.Generation {
 			logger.Info("Skipping reconcile: generation has not changed")
-			r.Recorder.Event(instance, v1.EventTypeNormal, "ReconcileSkipped", "No updates to reconcile")
+			r.Recorder.Eventf(instance, instance, v1.EventTypeNormal, "ReconcileSkipped", "No updates to reconcile", "No updates to reconcile")
 			return ctrl.Result{}, nil
 		}
 	}
@@ -262,7 +262,7 @@ func (r *MongoDBProviderReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	r.Recorder.Event(instance, v1.EventTypeNormal, "Reconciled", "MongoDBProvider reconciled")
+	r.Recorder.Eventf(instance, instance, v1.EventTypeNormal, "Reconciled", "MongoDBProvider reconciled", "MongoDBProvider reconciled")
 	promMongoDBProviderStatus.WithLabelValues(req.Name, instance.Spec.Selector).Set(1)
 	return ctrl.Result{}, nil
 }
@@ -275,7 +275,7 @@ func (r *MongoDBProviderReconciler) handleError(
 ) (ctrl.Result, error) {
 	promMongoDBProviderReconcileErrorCounter.WithLabelValues(instance.Name, instance.Spec.Selector, promErr).Inc()
 	promMongoDBProviderStatus.WithLabelValues(instance.Name, instance.Spec.Selector).Set(0)
-	r.Recorder.Event(instance, v1.EventTypeWarning, errTypeToEventReason(promErr), err.Error())
+	r.Recorder.Eventf(instance, instance, v1.EventTypeWarning, errTypeToEventReason(promErr), err.Error(), err.Error())
 
 	// set the status condition
 	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
@@ -308,7 +308,7 @@ func (r *MongoDBProviderReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		promMongoDBProviderStatus,
 		promMongoDBProviderConnectionVersion,
 	)
-	r.Recorder = mgr.GetEventRecorderFor("mongodbprovider-controller")
+	r.Recorder = mgr.GetEventRecorder("mongodbprovider-controller")
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&crdv1alpha1.MongoDBProvider{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
