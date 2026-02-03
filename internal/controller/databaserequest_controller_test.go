@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -147,7 +147,7 @@ var _ = Describe("DatabaseRequest Controller", func() {
 
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-			fakeRecoder := record.NewFakeRecorder(100)
+			fakeRecoder := events.NewFakeRecorder(100)
 			controllerReconciler := &DatabaseRequestReconciler{
 				Client:                   k8sClient,
 				Scheme:                   k8sClient.Scheme(),

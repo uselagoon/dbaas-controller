@@ -30,7 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -84,7 +84,7 @@ var (
 type DatabaseRequestReconciler struct {
 	client.Client
 	Scheme                   *runtime.Scheme
-	Recorder                 record.EventRecorder
+	Recorder                 events.EventRecorder
 	RelationalDatabaseClient database.RelationalDatabaseInterface
 	Locks                    sync.Map
 }
@@ -144,7 +144,7 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if databaseRequest.Status.Conditions != nil && meta.IsStatusConditionTrue(databaseRequest.Status.Conditions, "Ready") {
 		if databaseRequest.Status.ObservedGeneration >= databaseRequest.Generation {
 			logger.Info("No updates to reconcile")
-			r.Recorder.Event(databaseRequest, v1.EventTypeNormal, "ReconcileSkipped", "No updates to reconcile")
+			r.Recorder.Eventf(databaseRequest, databaseRequest, v1.EventTypeNormal, "ReconcileSkipped", "No updates to reconcile", "No updates to reconcile")
 			return ctrl.Result{}, nil
 		}
 	}
@@ -235,7 +235,7 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				return r.handleError(ctx, databaseRequest, "update-status", err, false)
 			}
 		}
-		r.Recorder.Event(databaseRequest, "Normal", "DatabaseRequestUpdated", "The database request has been updated")
+		r.Recorder.Eventf(databaseRequest, databaseRequest, "Normal", "DatabaseRequestUpdated", "The database request has been updated", "The database request has been updated")
 	} else {
 		// set the status condition to true if the database request has been created
 		if meta.SetStatusCondition(&databaseRequest.Status.Conditions, metav1.Condition{
@@ -248,7 +248,7 @@ func (r *DatabaseRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				return r.handleError(ctx, databaseRequest, "update-status", err, false)
 			}
 		}
-		r.Recorder.Event(databaseRequest, "Normal", "DatabaseRequestUnchanged", "The database request has been created")
+		r.Recorder.Eventf(databaseRequest, databaseRequest, "Normal", "DatabaseRequestUnchanged", "The database request has been created", "The database request has been created")
 	}
 	return ctrl.Result{}, nil
 }
@@ -264,7 +264,7 @@ func (r *DatabaseRequestReconciler) handleError(
 	promDatabaseRequestReconcileErrorCounter.With(
 		promLabels(databaseRequest, promErr)).Inc()
 	promDatabaseRequestReconcileStatus.With(promLabels(databaseRequest, "")).Set(0)
-	r.Recorder.Event(databaseRequest, v1.EventTypeWarning, "ReconcileError", err.Error())
+	r.Recorder.Eventf(databaseRequest, databaseRequest, v1.EventTypeWarning, "ReconcileError", err.Error(), err.Error())
 
 	// set status condition to false
 	meta.SetStatusCondition(&databaseRequest.Status.Conditions, metav1.Condition{
@@ -365,7 +365,7 @@ func (r *DatabaseRequestReconciler) handleService(
 	}, service); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.FromContext(ctx).Info("Creating service", "service", serviceName)
-			r.Recorder.Event(databaseRequest, "Normal", "CreateService", "Creating service")
+			r.Recorder.Eventf(databaseRequest, databaseRequest, "Normal", "CreateService", "Creating service", "Creating service")
 			service = &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      serviceName,
@@ -390,7 +390,7 @@ func (r *DatabaseRequestReconciler) handleService(
 		// update the service if the hostname has changed
 		if service.Spec.ExternalName != dbInfo.hostName {
 			log.FromContext(ctx).Info("Updating service", "service", service.Name, "hostname", dbInfo.hostName)
-			r.Recorder.Event(databaseRequest, "Normal", "UpdateService", "Updating service")
+			r.Recorder.Eventf(databaseRequest, databaseRequest, "Normal", "UpdateService", "Updating service", "Updating service")
 			service.Spec.ExternalName = dbInfo.hostName
 			if err := r.Update(ctx, service); err != nil {
 				return false, fmt.Errorf("failed to update service %s: %w", serviceName, err)
@@ -414,7 +414,7 @@ func (r *DatabaseRequestReconciler) handleSecret(
 	}, secret); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.FromContext(ctx).Info("Creating secret", "secret", databaseRequest.Name)
-			r.Recorder.Event(databaseRequest, "Normal", "CreateSecret", "Creating secret")
+			r.Recorder.Eventf(databaseRequest, databaseRequest, "Normal", "CreateSecret", "Creating secret", "Creating secret")
 			secret = &v1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      databaseRequest.Name,
@@ -436,7 +436,7 @@ func (r *DatabaseRequestReconciler) handleSecret(
 		diff := cmp.Diff(secret.Data, dbInfo.getSecretData(databaseRequest.Spec.Name, serviceName))
 		if diff != "" {
 			log.FromContext(ctx).Info("Updating secret due to diff")
-			r.Recorder.Event(databaseRequest, "Normal", "UpdateSecret", "Updating secret")
+			r.Recorder.Eventf(databaseRequest, databaseRequest, "Normal", "UpdateSecret", "Updating secret", "Updating secret")
 			secret.Data = dbInfo.getSecretData(databaseRequest.Spec.Name, serviceName)
 			if err := r.Update(ctx, secret); err != nil {
 				return false, fmt.Errorf("failed to update secret %s, %w", databaseRequest.Name, err)
@@ -498,10 +498,12 @@ func (r *DatabaseRequestReconciler) deleteDatabase(
 		}
 	}
 	// record the event
-	r.Recorder.Event(
+	r.Recorder.Eventf(
+		databaseRequest,
 		databaseRequest,
 		v1.EventTypeNormal,
 		"DeletedDatabase",
+		fmt.Sprintf("Deleted database %s/%s", databaseRequest.Namespace, databaseRequest.Name),
 		fmt.Sprintf("Deleted database %s/%s", databaseRequest.Namespace, databaseRequest.Name),
 	)
 	// cleanup metrics
@@ -585,7 +587,7 @@ func (r *DatabaseRequestReconciler) SetupWithManager(mgr ctrl.Manager, maxConcur
 		promDatabaseRequestReconcileErrorCounter,
 		promDatabaseRequestReconcileStatus,
 	)
-	r.Recorder = mgr.GetEventRecorderFor("DatabaseRequestReconciler")
+	r.Recorder = mgr.GetEventRecorder("DatabaseRequestReconciler")
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&crdv1alpha1.DatabaseRequest{}).
 		// do only reconcile on spec changes

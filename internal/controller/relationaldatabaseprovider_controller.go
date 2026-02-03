@@ -25,7 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -75,7 +75,7 @@ var (
 type RelationalDatabaseProviderReconciler struct {
 	client.Client
 	Scheme      *runtime.Scheme
-	Recorder    record.EventRecorder
+	Recorder    events.EventRecorder
 	RelDBClient database.RelationalDatabaseInterface
 }
 
@@ -121,7 +121,7 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 	if instance.Status.Conditions != nil && meta.IsStatusConditionTrue(instance.Status.Conditions, "Ready") {
 		if instance.Status.ObservedGeneration >= instance.Generation {
 			logger.Info("No updates to reconcile")
-			r.Recorder.Event(instance, v1.EventTypeNormal, "ReconcileSkipped", "No updates to reconcile")
+			r.Recorder.Eventf(instance, instance, v1.EventTypeNormal, "ReconcileSkipped", "No updates to reconcile", "No updates to reconcile")
 			return ctrl.Result{}, nil
 		}
 	}
@@ -279,7 +279,7 @@ func (r *RelationalDatabaseProviderReconciler) Reconcile(ctx context.Context, re
 		return ctrl.Result{}, err
 	}
 
-	r.Recorder.Event(instance, "Normal", "Reconciled", "RelationalDatabaseProvider reconciled")
+	r.Recorder.Eventf(instance, instance, "Normal", "Reconciled", "RelationalDatabaseProvider reconciled", "RelationalDatabaseProvider reconciled")
 	promRelationalDatabaseProviderStatus.WithLabelValues(instance.Spec.Type, req.Name, instance.Spec.Selector).Set(1)
 	return ctrl.Result{}, nil
 }
@@ -294,7 +294,7 @@ func (r *RelationalDatabaseProviderReconciler) handleError(
 	promRelationalDatabaseProviderReconcileErrorCounter.WithLabelValues(
 		instance.Spec.Type, instance.Name, instance.Spec.Selector, promErr).Inc()
 	promRelationalDatabaseProviderStatus.WithLabelValues(instance.Spec.Type, instance.Name, instance.Spec.Selector).Set(0)
-	r.Recorder.Event(instance, v1.EventTypeWarning, errTypeToEventReason(promErr), err.Error())
+	r.Recorder.Eventf(instance, instance, v1.EventTypeWarning, errTypeToEventReason(promErr), err.Error(), err.Error())
 
 	// set the status condition to false
 	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
@@ -355,7 +355,7 @@ func (r *RelationalDatabaseProviderReconciler) SetupWithManager(mgr ctrl.Manager
 		promRelationalDatabaseProviderStatus,
 		promRelationalDatabaseProviderConnectionVersion,
 	)
-	r.Recorder = mgr.GetEventRecorderFor("relationaldatabaseprovider_controller")
+	r.Recorder = mgr.GetEventRecorder("relationaldatabaseprovider_controller")
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&crdv1alpha1.RelationalDatabaseProvider{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
