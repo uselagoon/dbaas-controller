@@ -751,6 +751,7 @@ func (r *DatabaseRequestReconciler) relationalDatabaseOperation(
 			databaseRequest.Name,
 			databaseRequest.Namespace,
 			databaseRequest.Spec.Type,
+			conn.username,
 		)
 		if err != nil {
 			return fmt.Errorf("%s db operation %s failed: %w", databaseRequest.Spec.Type, operation, err)
