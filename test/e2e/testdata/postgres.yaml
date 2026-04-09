@@ -25,7 +25,7 @@ metadata:
 spec:
   containers:
   - name: postgres
-    image: postgres:13
+    image: postgres:15
     env:
     - name: POSTGRES_PASSWORD
       value: "e2e-postgres-password"
