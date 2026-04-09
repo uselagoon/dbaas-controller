@@ -342,6 +342,9 @@ func (rc *reldbConn) getDSN(useDatabase bool) string {
 		)
 		if useDatabase {
 			dsn += fmt.Sprintf(" dbname=%s", rc.name)
+		} else {
+			// Fallback to default `postgres` database.
+			dsn += fmt.Sprintf(" dbname=%s", "postgres")
 		}
 	}
 	return dsn
