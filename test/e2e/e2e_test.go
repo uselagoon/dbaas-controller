@@ -60,7 +60,7 @@ var _ = Describe("controller", Ordered, func() {
 		utils.UninstallCertManager()
 
 		By("removing the RelationalDatabaseProvider resource")
-		for _, name := range []string{"mysql", "mysql-scope", "postgres", "mongodb"} {
+		for _, name := range []string{"mysql", "mysql-scope", "postgres", "postgres-superuser", "mongodb"} {
 			cmd := exec.Command(
 				utils.Kubectl(),
 				"patch",
@@ -77,7 +77,7 @@ var _ = Describe("controller", Ordered, func() {
 			_, _ = utils.Run(cmd)
 		}
 		By("removing the DatabaseRequest resource")
-		for _, name := range []string{"mysql", "mysql-scope", "postgres", "seed"} {
+		for _, name := range []string{"mysql", "mysql-scope", "postgres", "postgres-superuser", "seed"} {
 			cmd := exec.Command(
 				utils.Kubectl(),
 				"patch",
@@ -104,7 +104,7 @@ var _ = Describe("controller", Ordered, func() {
 		utils.UninstallMongoDB()
 
 		By("removing service and secret")
-		for _, name := range []string{"mysql", "mysql-scope", "postgres", "mongodb"} {
+		for _, name := range []string{"mysql", "mysql-scope", "postgres", "postgres-superuser", "mongodb"} {
 			cmd = exec.Command(
 				utils.Kubectl(), "delete", "service", "-n", "default", "-l", "app.kubernetes.io/instance=databaserequest-"+name+"-sample")
 			_, _ = utils.Run(cmd)
@@ -178,7 +178,7 @@ var _ = Describe("controller", Ordered, func() {
 			EventuallyWithOffset(1, verifyControllerUp, time.Minute, time.Second).Should(Succeed())
 
 			By("validating that all database providers and database requests are working")
-			for _, name := range []string{"mysql", "mysql-scope", "postgres", "seed"} {
+			for _, name := range []string{"mysql", "mysql-scope", "postgres", "postgres-superuser", "seed"} {
 				if name != "seed" {
 					By("creating a RelationalDatabaseProvider resource")
 					cmd = exec.Command(

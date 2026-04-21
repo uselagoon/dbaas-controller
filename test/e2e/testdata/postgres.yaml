@@ -62,3 +62,12 @@ metadata:
 type: Opaque
 stringData:
   password: e2e-root-password
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-superuser-secret
+  namespace: postgres
+type: Opaque
+stringData:
+  password: e2e-postgres-password
