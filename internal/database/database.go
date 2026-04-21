@@ -62,7 +62,7 @@ type RelationalDatabaseInterface interface {
 	// It also creates a user and grants the user permissions on the database.
 	// This function is idempotent and can be called multiple times without side effects.
 	// returns the database name, username, and password
-	CreateDatabase(ctx context.Context, dsn, name, namespace, dbType string) (RelationalDatabaseInfo, error)
+	CreateDatabase(ctx context.Context, dsn, name, namespace, dbType string, providerUsername string) (RelationalDatabaseInfo, error)
 
 	// DropDatabase drops a database in the MySQL or PostgreSQL database if it exists.
 	// This function is idempotent and can be called multiple times without side effects.
@@ -260,6 +260,7 @@ func (ri *RelationalDatabaseImpl) CreateDatabase(
 	ctx context.Context,
 	dsn, name, namespace string,
 	dbType string,
+	providerUsername string,
 ) (RelationalDatabaseInfo, error) {
 	log.FromContext(ctx).Info("Creating database", "dbType", dbType)
 	db, err := ri.GetConnection(ctx, dsn, dbType)
@@ -308,15 +309,6 @@ func (ri *RelationalDatabaseImpl) CreateDatabase(
 		if err != nil {
 			return info, fmt.Errorf("create database failed to get %s database info: %w", dbType, err)
 		}
-		// Create the database
-		if _, err := db.Exec(fmt.Sprintf("CREATE DATABASE \"%s\"", info.Dbname)); err != nil {
-			if pqErr, ok := err.(*pq.Error); !ok || ok && pqErr.Code != "42P04" {
-				// either the error is not a pq.Error or it is a pq.Error but not a duplicate_database error
-				// 42P04 is the error code for duplicate_database
-				return info, fmt.Errorf(
-					"create %s database error in creating the database `%s`: %w", dbType, info.Dbname, err)
-			}
-		}
 
 		// Check if user exists and create or update the user
 		var userExists int
@@ -337,20 +329,20 @@ func (ri *RelationalDatabaseImpl) CreateDatabase(
 			}
 		}
 
-		// Change database owner
-		if _, err := db.Exec(
-			fmt.Sprintf("ALTER DATABASE \"%s\" OWNER TO \"%s\";", info.Dbname, info.Username),
-		); err != nil {
+		// Give dbaas-operator access to the User
+		if _, err := db.Exec(fmt.Sprintf("GRANT \"%s\" TO \"%s\";", info.Username, providerUsername)); err != nil {
 			return info, fmt.Errorf(
-				"create %s database error in change owner of database `%s`: %w", dbType, info.Dbname, err)
+				"create %s database error in grant user access to `%s`: %w", dbType, info.Username, err)
 		}
 
-		// Grant privileges
-		if _, err := db.Exec(
-			fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE \"%s\" TO \"%s\"", info.Dbname, info.Username),
-		); err != nil {
-			return info, fmt.Errorf(
-				"create %s database error in grant privileges in database `%s`: %w", dbType, info.Dbname, err)
+		// Create the database
+		if _, err := db.Exec(fmt.Sprintf("CREATE DATABASE \"%s\" OWNER \"%s\"", info.Dbname, info.Username)); err != nil {
+			if pqErr, ok := err.(*pq.Error); !ok || ok && pqErr.Code != "42P04" {
+				// either the error is not a pq.Error or it is a pq.Error but not a duplicate_database error
+				// 42P04 is the error code for duplicate_database
+				return info, fmt.Errorf(
+					"create %s database error in creating the database `%s`: %w", dbType, info.Dbname, err)
+			}
 		}
 	default:
 		return RelationalDatabaseInfo{}, fmt.Errorf(

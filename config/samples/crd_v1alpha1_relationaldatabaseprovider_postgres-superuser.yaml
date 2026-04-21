@@ -4,16 +4,16 @@ metadata:
   labels:
     app.kubernetes.io/name: dbaas-controller
     app.kubernetes.io/managed-by: kustomize
-  name: relationaldatabaseprovider-postgres-sample
+  name: relationaldatabaseprovider-postgres-superuser-sample
 spec:
   type: postgres
-  selector: development
+  selector: psql-superuser
   connections:
     - name: primary-test-postgres-connection
       hostname: postgres-service.postgres
       passwordSecretRef:
-        name: postgres-secret
+        name: postgres-superuser-secret
         namespace: postgres
       port: 5432
-      username: root
+      username: postgres
       enabled: true

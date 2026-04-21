@@ -27,7 +27,7 @@ func (mi *RelationalDatabaseMock) Initialize(ctx context.Context, dsn string, ki
 
 // CreateDatabase creates a database in the relational database if it does not exist.
 func (mi *RelationalDatabaseMock) CreateDatabase(
-	ctx context.Context, dsn, name, namespace, kind string) (RelationalDatabaseInfo, error) {
+	ctx context.Context, dsn, name, namespace, kind string, username string) (RelationalDatabaseInfo, error) {
 	return RelationalDatabaseInfo{Username: "user", Password: "pass", Dbname: "db"}, nil
 }
 
